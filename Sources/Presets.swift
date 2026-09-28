@@ -18,20 +18,27 @@ enum Presets {
 
     static let builtIn: [Preset] = [
         Preset(name: "Default", values: [:]),
+        Preset(name: "Golden sunset", values: [
+            "weather": "clear", "timeOfDay": "sunset", "season": "summer", "water": "jade", "rainMode": "never",
+            "depthDarken": false,
+        ]),
+        Preset(name: "Thunderstorm", values: [
+            "weather": "storm", "timeOfDay": "dusk", "water": "deep", "rainIntensity": 180.0, "dragonflies": 0.0,
+        ]),
         Preset(name: "Sunny spring", values: [
-            "weather": "clear", "season": "spring", "water": "jade", "depth": 40.0, "depthDarken": false,
+            "weather": "clear", "timeOfDay": "morning", "season": "spring", "water": "jade", "depth": 40.0, "depthDarken": false,
             "pondShape": "natural", "floorStyle": "original", "rainMode": "never",
         ]),
         Preset(name: "Rainy night", values: [
-            "weather": "night", "rainMode": "always", "rainIntensity": 150.0, "water": "deep",
+            "weather": "rain", "timeOfDay": "night", "rainMode": "always", "rainIntensity": 150.0, "water": "deep",
             "depth": 80.0, "fireflies": true, "dragonflies": 0.0,
         ]),
         Preset(name: "Autumn pond", values: [
-            "weather": "clear", "season": "autumn", "water": "moss", "floorStyle": "stones",
+            "weather": "windy", "timeOfDay": "afternoon", "season": "autumn", "water": "moss", "floorStyle": "stones",
             "pondShape": "rounded", "fallingAmount": 160.0, "rainMode": "never",
         ]),
         Preset(name: "Winter", values: [
-            "weather": "clear", "season": "winter", "water": "ink", "floorStyle": "slate", "padClusters": 2.0,
+            "weather": "cloudy", "timeOfDay": "day", "season": "winter", "water": "ink", "floorStyle": "slate", "padClusters": 2.0,
             "dragonflies": 0.0, "frog": false, "turtle": false, "fireflies": false, "reedAmount": 60.0,
         ]),
         Preset(name: "Zen minimal", values: [

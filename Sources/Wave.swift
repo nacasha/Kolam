@@ -224,8 +224,13 @@ struct Floating {
     /// 1 = a petal-sized thing; heavier things (big pads) move less.
     var mass: CGFloat = 1
 
+    /// Wind blowing across the surface, in points per second (set by the atmosphere).
+    static var wind = CGVector.zero
+
     mutating func step(_ node: SKNode, dt: CGFloat) {
-        let push = Wave.push(at: node.position)
+        var push = Wave.push(at: node.position)
+        push.dx += Floating.wind.dx * 0.25
+        push.dy += Floating.wind.dy * 0.25
         velocity.dx += push.dx / mass * dt
         velocity.dy += push.dy / mass * dt
         // A little spin from being shoved off-centre.

@@ -50,6 +50,10 @@ struct SettingsView: View {
     @AppStorage("vinesOn") private var vinesOn = true
     // Sky
     @AppStorage("weather") private var weather = "auto"
+    @AppStorage("timeOfDay") private var timeOfDay = "clock"
+    @AppStorage("cycleMinutes") private var cycleMinutes = 20.0
+    @AppStorage("windAmount") private var windAmount = 100.0
+    @AppStorage("lightning") private var lightning = true
     @AppStorage("season") private var season = "auto"
     @AppStorage("fallingOn") private var fallingOn = true
     @AppStorage("fallingAmount") private var fallingAmount = 100.0
@@ -210,12 +214,41 @@ struct SettingsView: View {
 
     @ViewBuilder private var sky: some View {
         Section {
+            Picker("Time of day", selection: $timeOfDay) {
+                Text("Follow my Mac's clock").tag("clock")
+                Text("Cycle through the day").tag("cycle")
+                Divider()
+                Text("Dawn").tag("dawn")
+                Text("Morning").tag("morning")
+                Text("Day").tag("day")
+                Text("Afternoon").tag("afternoon")
+                Text("Sunset").tag("sunset")
+                Text("Dusk").tag("dusk")
+                Text("Night").tag("night")
+            }
+            if timeOfDay == "cycle" { slider("Full day takes", $cycleMinutes, 2...120, step: 2, unit: " min") }
+            Toggle("Fireflies at night", isOn: $fireflies)
+        } header: {
+            Text("Time")
+        }
+        Section {
             Picker("Weather", selection: $weather) {
                 Text("Auto").tag("auto")
                 Text("Clear").tag("clear")
+                Text("Cloudy").tag("cloudy")
                 Text("Rain").tag("rain")
-                Text("Night").tag("night")
+                Text("Thunderstorm").tag("storm")
+                Text("Windy").tag("windy")
             }
+            slider("Wind", $windAmount, 0...300, step: 10, unit: "%")
+            Toggle("Lightning in storms", isOn: $lightning)
+        } header: {
+            Text("Weather")
+        } footer: {
+            Text("Wind blows petals, leaves and lily pads across the pond and makes the reeds sway. Windy and stormy weather multiply it. Auto changes the weather every 75 seconds.")
+                .foregroundStyle(.secondary)
+        }
+        Section {
             Picker("Season", selection: $season) {
                 Text("Auto").tag("auto")
                 Text("Spring").tag("spring")
@@ -223,9 +256,10 @@ struct SettingsView: View {
                 Text("Autumn").tag("autumn")
                 Text("Winter").tag("winter")
             }
+        } header: {
+            Text("Season")
         } footer: {
-            Text("Auto changes the weather every 75 seconds and the season every 4 minutes.")
-                .foregroundStyle(.secondary)
+            Text("Auto changes the season every 4 minutes.").foregroundStyle(.secondary)
         }
         Section {
             Picker("Rain", selection: $rainMode) {
@@ -243,13 +277,12 @@ struct SettingsView: View {
         } header: {
             Text("Rain")
         } footer: {
-            Text("Auto rains only when the weather is Rain. Always rains in any weather, even at night.")
+            Text("Auto rains when the weather is Rain or Thunderstorm. Always rains in any weather.")
                 .foregroundStyle(.secondary)
         }
         Section {
             Toggle("Falling petals, leaves & snow", isOn: $fallingOn)
             if fallingOn { slider("Amount", $fallingAmount, 10...200, step: 10, unit: "%") }
-            Toggle("Fireflies at night", isOn: $fireflies)
         }
     }
 

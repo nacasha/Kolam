@@ -1,6 +1,6 @@
 // PondScene — the pond itself, bottom to top: shader water, shadows, small fish,
 // koi, the surface (pads, ripples, falling items), vines, dragonflies, the
-// weather overlay, and fireflies.
+// time-of-day and weather light, lightning, and fireflies.
 
 import SpriteKit
 
@@ -69,6 +69,7 @@ final class PondScene: SKScene {
         addChild(surfaceLayer)
 
         addChild(atmosphere.overlay)
+        addChild(atmosphere.flash)
         addChild(atmosphere.fireflyLayer)
 
         applyShadowAndWave(config)
@@ -336,6 +337,11 @@ final class PondScene: SKScene {
         }
         frog?.update(dt: dt, pads: pads, surface: surfaceLayer)
         turtle?.update(dt: dt, bounds: bounds, pads: pads, surface: surfaceLayer)
+        Floating.wind = atmosphere.wind
+        // Plants sway faster in stronger wind.
+        let sway = 0.6 + 0.5 * min(4, atmosphere.windStrength)
+        reeds?.speed = sway
+        vines?.speed = sway
         atmosphere.update(dt: dt, config: config, bounds: screen, pond: bounds, unit: unit, surface: surfaceLayer, shadows: shadowLayer)
     }
 }

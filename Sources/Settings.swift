@@ -21,6 +21,10 @@ enum Settings {
             "clickLure": true,
             "fps": 0,
             "weather": "auto",
+            "timeOfDay": "clock",
+            "cycleMinutes": 20.0,
+            "windAmount": 100.0,
+            "lightning": true,
             "season": "auto",
             "fallingOn": true,
             "fallingAmount": 100.0,
@@ -70,6 +74,11 @@ enum Settings {
 
     static func registerDefaults() {
         d.register(defaults: defaults)
+        // Weather used to include "night"; it's a time of day now.
+        if d.string(forKey: "weather") == "night" {
+            d.set("clear", forKey: "weather")
+            d.set("night", forKey: "timeOfDay")
+        }
     }
 
     static var paused: Bool {
@@ -106,6 +115,10 @@ struct PondConfig: Equatable {
     var clickLure: Bool
     /// nil = auto (cycles on its own).
     var weather: Weather?
+    var timeMode: TimeMode
+    var cycleMinutes: CGFloat
+    var windAmount: CGFloat
+    var lightning: Bool
     var season: Season?
     var fallingOn: Bool
     var fallingAmount: Double
@@ -166,6 +179,10 @@ struct PondConfig: Equatable {
             flowers: d.bool(forKey: "flowers"),
             clickLure: d.bool(forKey: "clickLure"),
             weather: Weather(rawValue: d.string(forKey: "weather") ?? ""),
+            timeMode: TimeMode(d.string(forKey: "timeOfDay")),
+            cycleMinutes: CGFloat(d.double(forKey: "cycleMinutes")),
+            windAmount: CGFloat(d.double(forKey: "windAmount") / 100),
+            lightning: d.bool(forKey: "lightning"),
             season: Season(rawValue: d.string(forKey: "season") ?? ""),
             fallingOn: d.bool(forKey: "fallingOn"),
             fallingAmount: d.double(forKey: "fallingAmount") / 100,
@@ -247,5 +264,20 @@ struct WaterPreset: Equatable {
     /// Swatch for the settings panel.
     var swatch: SKColor {
         SKColor(red: CGFloat(hi.x / 255), green: CGFloat(hi.y / 255), blue: CGFloat(hi.z / 255), alpha: 1)
+    }
+}
+
+/// Time of day: follow the Mac's clock, loop through a whole day, or hold one time.
+enum TimeMode: Equatable {
+    case clock
+    case cycle
+    case fixed(TimeOfDay)
+
+    init(_ raw: String?) {
+        switch raw {
+        case "cycle": self = .cycle
+        case let r?: self = TimeOfDay(rawValue: r).map(TimeMode.fixed) ?? .clock
+        default: self = .clock
+        }
     }
 }
