@@ -1,14 +1,32 @@
-// PondScene — the pond itself: shader water, then shadows, then koi.
+// PondScene — the pond itself, bottom to top: shader water, shadows, small fish,
+// koi, the surface (pads, ripples, falling items), vines, dragonflies, the
+// weather overlay, and fireflies.
 
 import SpriteKit
 
 final class PondScene: SKScene {
     private let water = SKSpriteNode(color: .black, size: .zero)
     private let shadowLayer = SKNode()
+    /// Everything under the surface, drawn through the wave refraction shader.
+    private let underwater = SKEffectNode()
+    /// Clips the underwater content to exactly the screen, so the effect node's
+    /// texture never changes size when a fish crosses an edge (that shook the pond).
+    private let underwaterClip = SKCropNode()
+    private let underwaterMask = SKSpriteNode(color: .white, size: .zero)
+    private let surfaceLayer = SKNode()
     private var koi: [Koi] = []
+    private var pads: [LilyPad] = []
+    private let minnowLayer = SKNode()
+    private var schools: [MinnowSchool] = []
+    private var dragonflies: [Dragonfly] = []
+    private var frog: Frog?
+    private var vines: SKNode?
+    private let atmosphere = Atmosphere()
+    private var config = PondConfig.current
+    private var elapsed: CGFloat = 0
     private var lastTime: TimeInterval?
 
-    static let waterColor = SKColor(red: 0.03, green: 0.13, blue: 0.12, alpha: 1)
+    private var unit: CGFloat { min(size.width, size.height) / 1100 }
 
     override init(size: CGSize) {
         super.init(size: size)
@@ -17,71 +35,266 @@ final class PondScene: SKScene {
         anchorPoint = .zero
 
         water.anchorPoint = .zero
-        water.shader = Shaders.water
+        water.shader = Shaders.makeWater(floor: Floor.bake(size: size, style: config.floorStyle))
         water.zPosition = -10
-        addChild(water)
+        underwaterMask.anchorPoint = .zero
+        underwaterClip.maskNode = underwaterMask
+        underwater.addChild(underwaterClip)
+        underwaterClip.addChild(water)
+        underwater.shader = Wave.makeRefraction()
+        underwater.shouldRasterize = false
+        addChild(underwater)
 
         shadowLayer.zPosition = -5
-        addChild(shadowLayer)
+        underwaterClip.addChild(shadowLayer)
 
+        minnowLayer.zPosition = -2
+        underwaterClip.addChild(minnowLayer)
+
+        surfaceLayer.zPosition = 1000
+        addChild(surfaceLayer)
+
+        addChild(atmosphere.overlay)
+        addChild(atmosphere.fireflyLayer)
+
+        applyShadowAndWave(config)
         layoutWater()
-        spawnKoi()
+        Shaders.applyWater(config)
+        setKoiCount(config.koiCount)
+        spawnPads()
+        spawnMinnows()
+        setDragonflyCount(config.dragonflies)
+        setFrog(config.frog)
+        buildVines()
     }
 
     required init?(coder: NSCoder) { fatalError("not used") }
+
+    // MARK: Settings
+
+    /// Applies changed settings, rebuilding only what they affect.
+    func apply(_ new: PondConfig) {
+        guard new != config else { return }
+        let old = config
+        config = new
+
+        applyShadowAndWave(new)
+        Shaders.applyWater(new)
+        if new.floorStyle != old.floorStyle {
+            water.shader = Shaders.makeWater(floor: Floor.bake(size: size, style: new.floorStyle))
+        }
+        // Size and water colour are baked into each fish, so those rebuild the school.
+        if new.koiSize != old.koiSize || new.water != old.water || new.depth != old.depth
+            || new.depthDarken != old.depthDarken || new.shadowBlur != old.shadowBlur {
+            setKoiCount(0)
+        }
+        setKoiCount(new.koiCount)
+
+        if new.padsOn != old.padsOn || new.padClusters != old.padClusters || new.flowers != old.flowers {
+            spawnPads()
+        }
+        if new.minnowsOn != old.minnowsOn || new.minnowSchools != old.minnowSchools || new.water != old.water {
+            spawnMinnows()
+        }
+        setDragonflyCount(new.dragonflies)
+        if new.frog != old.frog { setFrog(new.frog) }
+        if new.vinesOn != old.vinesOn || new.depth != old.depth || new.shadowStrength != old.shadowStrength
+            || new.shadowDistance != old.shadowDistance || new.lightAngle != old.lightAngle { buildVines() }
+    }
+
+    private func applyShadowAndWave(_ c: PondConfig) {
+        Depth.set(c.depth, darken: c.depthDarken)
+        Depth.shadowStrength = c.shadowStrength
+        Depth.shadowBlur = c.shadowBlur
+        Depth.shadowDistance = c.shadowDistance
+        Depth.lightAngle = c.lightAngle
+        Wave.amplitude = c.wobbleOn ? 4 * unit * c.wobbleIntensity : 0
+        Wave.length = 320 * unit * c.wobbleSize
+        Wave.unit = unit
+    }
+
+    // MARK: Creatures
+
+    private func spawnMinnows() {
+        schools.forEach { $0.remove() }
+        schools = []
+        guard config.minnowsOn else { return }
+        let color = SKColor(red: 0.62, green: 0.70, blue: 0.66, alpha: 1).blended(withFraction: 0.35, of: config.water.mid(depth: Depth.visual))!
+        schools = (0..<config.minnowSchools).map { _ in
+            MinnowSchool(at: CGPoint(x: .random(in: 0...size.width), y: .random(in: 0...size.height)),
+                         count: .random(in: 7...12), unit: unit, color: color, parent: minnowLayer)
+        }
+    }
+
+    private func setDragonflyCount(_ count: Int) {
+        while dragonflies.count > count {
+            let d = dragonflies.removeLast()
+            d.node.removeFromParent()
+            d.shadow.removeFromParent()
+        }
+        while dragonflies.count < count {
+            let d = Dragonfly(at: CGPoint(x: .random(in: 0...size.width), y: .random(in: 0...size.height)), unit: unit)
+            addChild(d.node)
+            shadowLayer.addChild(d.shadow)
+            dragonflies.append(d)
+        }
+    }
+
+    private func setFrog(_ on: Bool) {
+        frog?.remove()
+        frog = nil
+        guard on else { return }
+        frog = Frog(unit: unit)
+        frog?.seat(on: pads)
+    }
+
+    private func buildVines() {
+        vines?.removeFromParent()
+        vines = nil
+        guard config.vinesOn else { return }
+        let v = Vines.build(in: CGRect(origin: .zero, size: size), unit: unit)
+        addChild(v)
+        vines = v
+    }
+
+    // MARK: Koi
+
+    private func setKoiCount(_ count: Int) {
+        while koi.count > count {
+            let fish = koi.removeLast()
+            fish.node.removeFromParent()
+            fish.shadowNode.removeFromParent()
+        }
+        while koi.count < count {
+            // Cycle through varieties so any count shows a good mix.
+            let variety = KoiVariety.all[(koi.count + Int.random(in: 0..<KoiVariety.all.count)) % KoiVariety.all.count]
+            let depth = CGFloat.random(in: 0...1)
+            let pos = CGPoint(x: .random(in: size.width * 0.15...size.width * 0.85),
+                              y: .random(in: size.height * 0.15...size.height * 0.85))
+            let fish = Koi(at: pos, scale: unit * config.koiSize * .random(in: 1.3...1.9), depth: depth,
+                           variety: variety, water: config.water.mid(depth: Depth.visual))
+            // Deeper fish sit lower in the stack so shallow ones swim over them.
+            fish.node.zPosition = (1 - depth) * 900
+            underwaterClip.addChild(fish.node)
+            shadowLayer.addChild(fish.shadowNode)
+            koi.append(fish)
+        }
+    }
+
+    // MARK: Lily pads
+
+    /// Clusters of 2–4 pads, some with flowers. Pads float above the fish.
+    private func spawnPads() {
+        pads.forEach { $0.node.removeFromParent(); $0.shadow.removeFromParent() }
+        pads = []
+        guard config.padsOn else { return }
+        for _ in 0..<config.padClusters {
+            let center = CGPoint(x: .random(in: 0...size.width), y: .random(in: 0...size.height))
+            for _ in 0..<Int.random(in: 2...4) {
+                let pos = CGPoint(x: center.x + .random(in: -110...110) * unit,
+                                  y: center.y + .random(in: -90...90) * unit)
+                let flower = config.flowers && .random(in: 0...1) < 0.22
+                let pad = LilyPad(at: pos, radius: .random(in: 34...62) * unit, flower: flower)
+                shadowLayer.addChild(pad.shadow)
+                surfaceLayer.addChild(pad.node)
+                pads.append(pad)
+            }
+        }
+        frog?.seat(on: pads)
+    }
+
+    // MARK: Interaction
+
+    override func mouseDown(with event: NSEvent) {
+        let point = event.location(in: self)
+        Ripple.spawn(at: point, in: surfaceLayer, size: 240 * unit)
+        if config.splashOn {
+            Wave.splash(at: point, strength: 9 * unit * config.splashStrength)
+        }
+        guard config.clickLure else { return }
+        let reach = max(size.width, size.height) * 0.45
+        koi.forEach { $0.notice(point, reach: reach) }
+    }
+
+    // MARK: Layout & frame loop
 
     override func didChangeSize(_ oldSize: CGSize) {
         layoutWater()
     }
 
     private func layoutWater() {
+        underwaterMask.size = size
         water.size = size
         water.setValue(SKAttributeValue(vectorFloat2: vector_float2(Float(size.width), Float(size.height))),
                        forAttribute: "a_size")
-    }
-
-    /// Roughly one koi per 600k square points, e.g. 8 on a 3440×1440 display.
-    private func spawnKoi() {
-        let count = max(4, min(10, Int(size.width * size.height / 600_000)))
-        let varieties = KoiVariety.all.shuffled()
-        let depths = (0..<count).map { _ in CGFloat.random(in: 0...1) }.sorted(by: >)
-        let unit = min(size.width, size.height) / 1100
-
-        for (k, depth) in depths.enumerated() {
-            let pos = CGPoint(x: .random(in: size.width * 0.15...size.width * 0.85),
-                              y: .random(in: size.height * 0.15...size.height * 0.85))
-            let fish = Koi(at: pos, scale: unit * .random(in: 0.85...1.3), depth: depth,
-                           variety: varieties[k % varieties.count], water: Self.waterColor)
-            // Deeper fish sit lower in the stack so shallow ones swim over them.
-            fish.node.zPosition = CGFloat(k) * 10
-            addChild(fish.node)
-            shadowLayer.addChild(fish.shadowNode)
-            koi.append(fish)
-        }
     }
 
     override func update(_ currentTime: TimeInterval) {
         // Clamp so a long pause (covered, asleep) doesn't teleport the fish.
         let dt = CGFloat(min(currentTime - (lastTime ?? currentTime), 1.0 / 20))
         lastTime = currentTime
+        elapsed += dt
+        Wave.update(time: elapsed, effect: underwater, size: size)
         let bounds = CGRect(origin: .zero, size: size)
+        let koiDt = dt * config.koiSpeed
         for fish in koi {
-            fish.update(dt: dt, bounds: bounds, others: koi)
+            fish.update(dt: koiDt, bounds: bounds, others: koi)
         }
+        for pad in pads {
+            pad.update(dt: dt, time: elapsed, bounds: bounds)
+        }
+        for school in schools {
+            school.update(dt: dt, bounds: bounds, koi: koi, follow: config.minnowFollow)
+        }
+        for d in dragonflies {
+            d.update(dt: dt, bounds: bounds)
+        }
+        frog?.update(dt: dt, pads: pads, surface: surfaceLayer)
+        atmosphere.update(dt: dt, config: config, bounds: bounds, unit: unit, surface: surfaceLayer, shadows: shadowLayer)
     }
 }
 
 enum Shaders {
-    /// Procedural water: a dark green base with drifting caustic light.
-    /// Everything runs on the GPU; the CPU only advances u_time.
-    static let water: SKShader = {
-        let s = SKShader(source: """
-        void main() {
-            vec2 px = v_tex_coord * a_size;
-            float t = u_time * 0.18 + 23.0;
+    private static let lo = SKUniform(name: "u_lo", vectorFloat3: .zero)
+    private static let hi = SKUniform(name: "u_hi", vectorFloat3: .zero)
+    private static let spotDark = SKUniform(name: "u_spot_dark", vectorFloat3: .zero)
+    private static let spotLight = SKUniform(name: "u_spot_light", vectorFloat3: .zero)
+    private static let depth = SKUniform(name: "u_depth", float: 0.7)
+    private static let floorOn = SKUniform(name: "u_floor_on", float: 1)
+    private static let lightColor = SKUniform(name: "u_light_color", vectorFloat3: .zero)
+    private static let lightAmount = SKUniform(name: "u_light_amount", float: 0)
+    private static let drift = SKUniform(name: "u_drift", float: 0)
+    private static let sky = SKUniform(name: "u_sky", float: 0)
+    private static let rain = SKUniform(name: "u_rain", float: 0)
+    private static let night = SKUniform(name: "u_night", float: 0)
 
-            // Tileable caustics (period = 520px), after "Tileable Water Caustic" by Dave_Hoskins.
-            vec2 p = mod(px / 520.0 * 6.28318, 6.28318) - 250.0;
+    /// Shared by every display's scene, so one update recolours them all.
+    static func applyWater(_ config: PondConfig) {
+        lo.vectorFloat3Value = config.water.lo / 255
+        hi.vectorFloat3Value = config.water.hi / 255
+        spotDark.vectorFloat3Value = config.water.spotDark / 255
+        spotLight.vectorFloat3Value = config.water.spotLight / 255
+        depth.floatValue = Float(Depth.visual)
+        floorOn.floatValue = config.floorStyle == .plain ? 0 : 1
+        lightColor.vectorFloat3Value = config.water.light
+        lightAmount.floatValue = config.wavesOn ? Float(0.22 * config.waveIntensity) : 0
+        drift.floatValue = config.driftOn ? Float(config.driftIntensity) : 0
+        sky.floatValue = config.skyOn ? 1 : 0
+    }
+
+    static func applyAtmosphere(rain r: CGFloat, night n: CGFloat) {
+        rain.floatValue = Float(r)
+        night.floatValue = Float(n)
+    }
+
+    /// Procedural water over the baked floor: floor colours, a water column that
+    /// thickens with depth, drifting caustic light, and surface reflections.
+    /// Colour uniforms are shared by every display; each scene has its own floor texture.
+    static func makeWater(floor: SKTexture) -> SKShader {
+        let s = SKShader(source: """
+        // Tileable caustics, after "Tileable Water Caustic" by Dave_Hoskins.
+        float caustic(vec2 px, float period, float t) {
+            vec2 p = mod(px / period * 6.28318, 6.28318) - 250.0;
             vec2 i = p;
             float c = 1.0;
             float inten = 0.005;
@@ -92,18 +305,68 @@ enum Shaders {
             }
             c /= 4.0;
             c = 1.17 - pow(c, 1.4);
-            float light = clamp(pow(abs(c), 8.0), 0.0, 1.0);
+            return clamp(pow(abs(c), 8.0), 0.0, 1.0);
+        }
 
-            // Depth gradient: lighter toward the top edge, darker at the bottom.
-            vec3 deep    = vec3(0.016, 0.086, 0.078);
-            vec3 shallow = vec3(0.043, 0.180, 0.160);
-            vec3 col = mix(deep, shallow, smoothstep(0.0, 1.0, v_tex_coord.y));
-            col += vec3(0.30, 0.50, 0.42) * light * 0.28;
+        float hash21(vec2 p) {
+            p = fract(p * vec2(123.34, 456.21));
+            p += dot(p, p + 45.32);
+            return fract(p.x * p.y);
+        }
+
+        float vnoise(vec2 p) {
+            vec2 i = floor(p);
+            vec2 f = fract(p);
+            f = f * f * (3.0 - 2.0 * f);
+            return mix(mix(hash21(i), hash21(i + vec2(1.0, 0.0)), f.x),
+                       mix(hash21(i + vec2(0.0, 1.0)), hash21(i + vec2(1.0, 1.0)), f.x), f.y);
+        }
+
+        void main() {
+            // Pond floor: mottled lo→hi colour with pebbles, lit from the top-left.
+            vec4 fl = texture2D(u_floor, v_tex_coord);
+            float n = mix(0.5, fl.r, u_floor_on);
+            vec3 floorCol = mix(u_lo, u_hi, n);
+            floorCol = mix(floorCol, u_spot_dark, fl.g * u_floor_on);
+            floorCol = mix(floorCol, u_spot_light, fl.b * u_floor_on);
+            floorCol *= 1.0 - (v_tex_coord.x * 0.5 + (1.0 - v_tex_coord.y) * 0.5) * 0.35;
+
+            // Water column: deeper water hides the floor under its own tint and darkens it.
+            vec3 col = mix(floorCol, u_lo * 0.6, u_depth * 0.55) * (0.95 - 0.6 * u_depth);
+
+            vec2 px = v_tex_coord * a_size;
+            // Rain and night mute the light on the water.
+            float calm = (1.0 - 0.5 * u_rain - 0.6 * u_night) * (1.3 - u_depth);
+
+            if (u_light_amount > 0.0) {
+                float t = u_time * 0.18 + 23.0;
+                // Two caustic layers at different scales and angles, so the tiling never lines up.
+                vec2 q = mat2(0.8, -0.6, 0.6, 0.8) * px;
+                float light = caustic(px, 900.0, t) * 0.6 + caustic(q + 311.0, 610.0, t * 0.83 + 7.0) * 0.4;
+                col += u_light_color * light * u_light_amount * calm;
+            }
+
+            // Drifting light: large soft patches of brightness wandering slowly.
+            if (u_drift > 0.0) {
+                float d = vnoise(px / 650.0 + vec2(u_time * 0.015, u_time * 0.011)) * 0.65
+                        + vnoise(px / 300.0 - vec2(u_time * 0.02, -u_time * 0.01)) * 0.35;
+                col += u_light_color * smoothstep(0.5, 0.85, d) * u_drift * 0.09 * calm;
+            }
+
+            // Sky reflections: long pale streaks, like clouds mirrored on the surface.
+            if (u_sky > 0.0) {
+                vec2 r = mat2(0.92, 0.38, -0.38, 0.92) * px;
+                float s = vnoise(vec2(r.x / 1500.0 + u_time * 0.008, r.y / 220.0));
+                vec3 skyCol = mix(vec3(0.70, 0.82, 0.88), vec3(0.20, 0.26, 0.45), u_night);
+                col = mix(col, skyCol, smoothstep(0.55, 0.95, s) * u_sky * 0.10);
+            }
 
             gl_FragColor = vec4(col, 1.0);
         }
         """)
         s.attributes = [SKAttribute(name: "a_size", type: .vectorFloat2)]
+        s.uniforms = [lo, hi, spotDark, spotLight, depth, floorOn, lightColor, lightAmount, drift, sky, rain, night,
+                      SKUniform(name: "u_floor", texture: floor)]
         return s
-    }()
+    }
 }

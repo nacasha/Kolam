@@ -5,41 +5,29 @@
 // A view is paused whenever nobody can see it (covered, locked, asleep).
 
 import AppKit
-import ServiceManagement
 import SpriteKit
-
-// MARK: - Settings
-
-enum Settings {
-    private static let d = UserDefaults.standard
-
-    static var paused: Bool {
-        get { d.bool(forKey: "paused") }
-        set { d.set(newValue, forKey: "paused") }
-    }
-
-    static var showStats: Bool {
-        get { d.bool(forKey: "showStats") }
-        set { d.set(newValue, forKey: "showStats") }
-    }
-}
 
 // MARK: - Wallpaper window
 
+/// Takes the first click even though the app is never frontmost.
+final class PondView: SKView {
+    override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
+}
+
 final class WallpaperWindow: NSWindow {
-    let skView: SKView
+    let skView: PondView
+    private let maxFPS: Int
 
     init(screen: NSScreen) {
-        skView = SKView(frame: NSRect(origin: .zero, size: screen.frame.size))
+        skView = PondView(frame: NSRect(origin: .zero, size: screen.frame.size))
         skView.autoresizingMask = [.width, .height]
-        skView.preferredFramesPerSecond = screen.maximumFramesPerSecond
+        maxFPS = screen.maximumFramesPerSecond
         skView.ignoresSiblingOrder = true
         skView.shouldCullNonVisibleNodes = true
 
         super.init(contentRect: screen.frame, styleMask: .borderless, backing: .buffered, defer: false)
-        level = NSWindow.Level(Int(CGWindowLevelForKey(.desktopWindow)))
         collectionBehavior = [.canJoinAllSpaces, .stationary, .ignoresCycle, .fullScreenNone]
-        ignoresMouseEvents = true
+        setInteractive(Settings.interactive)
         isOpaque = true
         hasShadow = false
         backgroundColor = .black
@@ -49,19 +37,30 @@ final class WallpaperWindow: NSWindow {
         setFrame(screen.frame, display: false)
 
         skView.presentScene(PondScene(size: screen.frame.size))
-        applyStats()
+        applySettings()
         orderFrontRegardless()
+    }
+
+    func applySettings() {
+        setInteractive(Settings.interactive)
+        skView.preferredFramesPerSecond = Settings.fps > 0 ? min(Settings.fps, maxFPS) : maxFPS
+        skView.showsFPS = Settings.showStats
+        skView.showsNodeCount = Settings.showStats
+        skView.showsDrawCount = Settings.showStats
+        (skView.scene as? PondScene)?.apply(.current)
+    }
+
+    /// Non-interactive: below desktop icons, clicks pass through to Finder.
+    /// Interactive: just above desktop icons (still below app windows), takes clicks.
+    func setInteractive(_ on: Bool) {
+        let base = CGWindowLevelForKey(on ? .desktopIconWindow : .desktopWindow)
+        level = NSWindow.Level(Int(base) + (on ? 1 : 0))
+        ignoresMouseEvents = !on
     }
 
     /// PONDWALL_ALWAYS_RUN=1 ignores occlusion, for measuring cost while windows cover the desktop.
     var isVisibleOnScreen: Bool {
         occlusionState.contains(.visible) || ProcessInfo.processInfo.environment["PONDWALL_ALWAYS_RUN"] != nil
-    }
-
-    func applyStats() {
-        skView.showsFPS = Settings.showStats
-        skView.showsNodeCount = Settings.showStats
-        skView.showsDrawCount = Settings.showStats
     }
 
     func tearDown() {
@@ -86,12 +85,37 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
         observe()
         rebuildWindows()
+        scheduleSnapshot()
+    }
+
+    /// PONDWALL_SNAPSHOT=/path.png renders the first display's scene to a PNG after a few
+    /// seconds and quits. Used for checking the look without screen-recording permission.
+    private func scheduleSnapshot() {
+        guard let path = ProcessInfo.processInfo.environment["PONDWALL_SNAPSHOT"], let window = windows.first else { return }
+        // PONDWALL_SPLASH=1 drops a test splash in the middle shortly before the snapshot.
+        if ProcessInfo.processInfo.environment["PONDWALL_SPLASH"] != nil {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 5.2) {
+                let size = window.skView.bounds.size
+                Wave.splash(at: CGPoint(x: size.width / 2, y: size.height / 2), strength: 9 * Wave.unit * 2)
+            }
+        }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 6) {
+            if let scene = window.skView.scene,
+               let image = window.skView.texture(from: scene)?.cgImage(),
+               let data = NSBitmapImageRep(cgImage: image).representation(using: .png, properties: [:]) {
+                try? data.write(to: URL(fileURLWithPath: path))
+            }
+            NSApp.terminate(nil)
+        }
     }
 
     private func observe() {
         let nc = NotificationCenter.default
         nc.addObserver(forName: NSApplication.didChangeScreenParametersNotification, object: nil, queue: .main) {
             [weak self] _ in self?.rebuildWindows()
+        }
+        nc.addObserver(forName: UserDefaults.didChangeNotification, object: nil, queue: .main) {
+            [weak self] _ in self?.windows.forEach { $0.applySettings() }
         }
         nc.addObserver(forName: NSWindow.didChangeOcclusionStateNotification, object: nil, queue: .main) {
             [weak self] n in if n.object is WallpaperWindow { self?.updatePlayback() }
@@ -140,8 +164,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         menu.addItem(status)
         menu.addItem(.separator())
         menu.addItem(item(Settings.paused ? "Resume" : "Pause", #selector(togglePause)))
-        menu.addItem(item("Show FPS", #selector(toggleStats), on: Settings.showStats))
-        menu.addItem(item("Start at Login", #selector(toggleLogin), on: SMAppService.mainApp.status == .enabled))
+        let settings = item("Settings…", #selector(openSettings))
+        settings.keyEquivalent = ","
+        menu.addItem(settings)
+        menu.addItem(.separator())
+        menu.addItem(item("Interactive (hides desktop icons)", #selector(toggleInteractive), on: Settings.interactive))
         menu.addItem(.separator())
         menu.addItem(NSMenuItem(title: "Quit PondWall", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q"))
     }
@@ -158,29 +185,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         updatePlayback()
     }
 
-    @objc private func toggleStats() {
-        Settings.showStats.toggle()
-        windows.forEach { $0.applyStats() }
-    }
+    /// Settings writes trigger UserDefaults.didChangeNotification, which applies them.
+    @objc private func toggleInteractive() { Settings.interactive.toggle() }
 
-    @objc private func toggleLogin() {
-        do {
-            if SMAppService.mainApp.status == .enabled {
-                try SMAppService.mainApp.unregister()
-            } else {
-                try SMAppService.mainApp.register()
-            }
-        } catch {
-            let alert = NSAlert(error: error)
-            alert.messageText = "Couldn't change Start at Login"
-            NSApp.activate(ignoringOtherApps: true)
-            alert.runModal()
-        }
-    }
+    @objc private func openSettings() { SettingsWindow.shared.show() }
 }
 
 let app = NSApplication.shared
 let delegate = AppDelegate()
 app.delegate = delegate
 app.setActivationPolicy(.accessory)
+Settings.registerDefaults()
 app.run()
