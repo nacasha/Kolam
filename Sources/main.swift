@@ -87,6 +87,29 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         observe()
         rebuildWindows()
         scheduleSnapshot()
+        scheduleSettingsSnapshot()
+    }
+
+    /// PONDWALL_SETTINGS_SNAPSHOT=/dir opens the settings window, renders each page to
+    /// <dir>/<page>.png and quits. Used for checking the layout without screen recording.
+    private func scheduleSettingsSnapshot() {
+        guard let dir = ProcessInfo.processInfo.environment["PONDWALL_SETTINGS_SNAPSHOT"] else { return }
+        SettingsWindow.shared.show()
+        let pages = SettingsPage.allCases
+        func shoot(_ k: Int) {
+            guard k < pages.count else { NSApp.terminate(nil); return }
+            UserDefaults.standard.set(pages[k].rawValue, forKey: "settingsPage")
+            DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) {
+                if let view = SettingsWindow.shared.window?.contentView,
+                   let rep = view.bitmapImageRepForCachingDisplay(in: view.bounds) {
+                    view.cacheDisplay(in: view.bounds, to: rep)
+                    try? rep.representation(using: .png, properties: [:])?
+                        .write(to: URL(fileURLWithPath: dir).appendingPathComponent("\(pages[k].rawValue).png"))
+                }
+                shoot(k + 1)
+            }
+        }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) { shoot(0) }
     }
 
     /// PONDWALL_SNAPSHOT=/path.png renders the first display's scene to a PNG after a few
