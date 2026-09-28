@@ -322,7 +322,10 @@ enum Vines {
             p = CGPoint(x: p.x + cos(angle) * step, y: p.y + sin(angle) * step)
         }
 
-        let container = SKNode()
+        // Cached as an image: the stem is a vector shape SpriteKit would otherwise re-stroke every frame.
+        let container = SKEffectNode()
+        container.shouldRasterize = true
+        container.shouldEnableEffects = true
         container.position = start
         let path = CGMutablePath()
         path.addLines(between: points)
@@ -365,6 +368,7 @@ enum Vines {
             side = -side
         }
 
+        PlantCache.shrink(container)
         let sway = SKAction.rotate(byAngle: 0.025, duration: .random(in: 3...4.5))
         sway.timingMode = .easeInEaseOut
         container.run(.repeatForever(.sequence([sway, sway.reversed()])))

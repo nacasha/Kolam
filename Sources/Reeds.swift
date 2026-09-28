@@ -62,7 +62,10 @@ enum Reeds {
     /// Seen from above: blades fanning out from a base toward `lean` (over the water),
     /// with cattail heads on a few stalks. The whole clump sways in the wind.
     private static func clump(at p: CGPoint, lean out: CGFloat, unit u: CGFloat, cattails: Bool) -> SKNode {
-        let clump = SKNode()
+        // Drawn once into a cached image: a clump is ~25 sprites, and the sway/lean only rotate it.
+        let clump = SKEffectNode()
+        clump.shouldRasterize = true
+        clump.shouldEnableEffects = true
         clump.position = p
         let greens: [SKColor] = [
             SKColor(red: 0.30, green: 0.48, blue: 0.20, alpha: 1),
@@ -139,6 +142,7 @@ enum Reeds {
             }
         }
 
+        PlantCache.shrink(clump)
         let sway = SKAction.rotate(byAngle: .random(in: 0.025...0.05), duration: .random(in: 2.2...3.6))
         sway.timingMode = .easeInEaseOut
         clump.run(.sequence([.wait(forDuration: .random(in: 0...2)), .repeatForever(.sequence([sway, sway.reversed()]))]))

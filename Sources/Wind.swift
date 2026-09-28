@@ -17,3 +17,21 @@ enum PlantLean {
         }
     }
 }
+
+enum PlantCache {
+    /// Resolution plant images are cached at; they're soft and moving, so lower is fine.
+    static let scale: CGFloat = 0.6
+
+    /// Moves a rasterized node's children into an inner node drawn at `scale`, and scales the
+    /// node back up, so its cached image is smaller.
+    static func shrink(_ node: SKEffectNode) {
+        let inner = SKNode()
+        for child in node.children {
+            child.removeFromParent()
+            inner.addChild(child)
+        }
+        inner.setScale(scale)
+        node.addChild(inner)
+        node.setScale(1 / scale)
+    }
+}

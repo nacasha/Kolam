@@ -114,7 +114,7 @@ enum SettingsPage: String, CaseIterable, Identifiable {
         case .weather: return ["weather", "windAmount", "windAuto", "windDirection", "windRipplesOn", "windRipples", "lightning", "rainMode", "rainIntensity", "rainDropSize", "rainVary", "rainDim"]
         case .season: return ["season", "fallingOn", "fallingAmount"]
         case .interaction: return ["feedOn", "clickLure", "splashOn", "splashStrength"]
-        case .performance: return ["fps", "floorLowRes"]
+        case .performance: return ["fps", "floorLowRes", "surfaceScale"]
         case .general: return ["showStats"]
         }
     }
@@ -786,6 +786,7 @@ struct InteractionPage: View {
 struct PerformancePage: View {
     @AppStorage("fps") private var fps = 0
     @AppStorage("floorLowRes") private var floorLowRes = false
+    @AppStorage("surfaceScale") private var surfaceScale = 75.0
     @AppStorage("wobbleOn") private var wobbleOn = true
     @AppStorage("splashOn") private var splashOn = true
     @AppStorage("windRipplesOn") private var windRipplesOn = true
@@ -799,7 +800,7 @@ struct PerformancePage: View {
 
     /// Rough memory estimate, from measurements on a 3440×1440 display.
     private var estimate: Int {
-        180 + (surfacePass ? 440 : 0) + (lookPass ? 180 : 0) + (floorLowRes ? 0 : 5)
+        180 + (surfacePass ? Int(80 + 360 * surfaceScale * surfaceScale / 10000) : 0) + (lookPass ? 180 : 0) + (floorLowRes ? 0 : 5)
     }
 
     var body: some View {
@@ -812,10 +813,12 @@ struct PerformancePage: View {
                     for key in ["wobbleOn", "splashOn", "windRipplesOn", "tiltOn"] { UserDefaults.standard.set(false, forKey: key) }
                     UserDefaults.standard.set("natural", forKey: "artStyle")
                     floorLowRes = true
+                    surfaceScale = 50
                 } label: { Label("Save memory", systemImage: "leaf") }
                 Button {
                     for key in ["wobbleOn", "splashOn", "windRipplesOn"] { UserDefaults.standard.set(true, forKey: key) }
                     floorLowRes = false
+                    surfaceScale = 100
                 } label: { Label("Full quality", systemImage: "sparkles") }
                 Spacer()
             }
@@ -830,11 +833,22 @@ struct PerformancePage: View {
             ToggleRow(title: "Realistic ripples", symbol: "dot.radiowaves.left.and.right",
                       note: "Off: clicks and rain draw rings instead (a little more CPU).", isOn: $splashOn)
             ToggleRow(title: "Wind ripples", symbol: "wind", note: "Gusts roughening the water.", isOn: $windRipplesOn)
+            if surfacePass {
+                Picker(selection: $surfaceScale) {
+                    Text("Full").tag(100.0)
+                    Text("Balanced").tag(75.0)
+                    Text("Light").tag(50.0)
+                } label: {
+                    RowLabel(title: "Resolution", symbol: "square.resize",
+                             note: "What's under the surface is drawn at \(Int(surfaceScale))%. Lower is softer but lighter.")
+                }
+                .pickerStyle(.segmented)
+            }
         } header: {
             HStack {
                 Text("Water surface effects")
                 Spacer()
-                Text(surfacePass ? "about 440 MB" : "off").foregroundStyle(.secondary)
+                Text(surfacePass ? "about \(Int(80 + 360 * surfaceScale * surfaceScale / 10000)) MB" : "off").foregroundStyle(.secondary)
             }
         } footer: {
             Text("These share one full-screen pass. It uses memory while any of them is on, and nothing when all three are off.")

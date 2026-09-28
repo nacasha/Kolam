@@ -71,6 +71,7 @@ enum Settings {
             "reedAmount": 100.0,
             "cattails": true,
             "floorLowRes": false,
+            "surfaceScale": 75.0,
             "surfacingOn": true,
             "surfacingRate": 100.0,
             "artStyle": "natural",
@@ -183,6 +184,7 @@ struct PondConfig: Equatable {
     var reedAmount: CGFloat
     var cattails: Bool
     var floorLowRes: Bool
+    var surfaceScale: CGFloat
     var surfacingOn: Bool
     var surfacingRate: CGFloat
     var artStyle: ArtStyle
@@ -255,6 +257,7 @@ struct PondConfig: Equatable {
             reedAmount: CGFloat(d.double(forKey: "reedAmount") / 100),
             cattails: d.bool(forKey: "cattails"),
             floorLowRes: d.bool(forKey: "floorLowRes"),
+            surfaceScale: CGFloat(d.double(forKey: "surfaceScale") / 100),
             surfacingOn: d.bool(forKey: "surfacingOn"),
             surfacingRate: CGFloat(d.double(forKey: "surfacingRate") / 100),
             artStyle: ArtStyle(rawValue: d.string(forKey: "artStyle") ?? "") ?? .natural,

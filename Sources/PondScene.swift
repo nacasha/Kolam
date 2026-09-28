@@ -9,6 +9,9 @@ final class PondScene: SKScene {
     private let shadowLayer = SKNode()
     /// Everything under the surface, drawn through the wave refraction shader.
     private let underwater = SKEffectNode()
+    /// Holds everything inside the effect node, scaled by the surface render scale; the
+    /// effect node scales back up, so its offscreen texture is smaller (less memory, less GPU).
+    private let underwaterScaled = SKNode()
     /// Clips the underwater content to exactly the screen, so the effect node's
     /// texture never changes size when a fish crosses an edge (that shook the pond).
     private let underwaterClip = SKCropNode()
@@ -54,8 +57,10 @@ final class PondScene: SKScene {
         shader = Style.make()
         underwaterMask.anchorPoint = .zero
         underwaterClip.maskNode = underwaterMask
-        underwater.addChild(underwaterClip)
-        frameAnchors.forEach(underwater.addChild)
+        underwater.addChild(underwaterScaled)
+        underwaterScaled.addChild(underwaterClip)
+        frameAnchors.forEach(underwaterScaled.addChild)
+        setSurfaceScale(config.surfaceScale)
         underwaterClip.addChild(water)
         underwater.shader = Wave.makeRefraction()
         underwater.shouldRasterize = false
@@ -99,6 +104,7 @@ final class PondScene: SKScene {
 
         applyShadowAndWave(new)
         Shaders.applyWater(new)
+        if new.surfaceScale != old.surfaceScale { setSurfaceScale(new.surfaceScale) }
         if new.floorStyle != old.floorStyle || new.floorLowRes != old.floorLowRes {
             water.shader = Shaders.makeWater(floor: Floor.bake(size: size, style: new.floorStyle, lowRes: new.floorLowRes))
         }
@@ -127,6 +133,12 @@ final class PondScene: SKScene {
             || new.depthDarken != old.depthDarken { setTurtle(new.turtle) }
         if new.vinesOn != old.vinesOn || new.depth != old.depth || new.shadowStrength != old.shadowStrength
             || new.shadowDistance != old.shadowDistance || new.lightAngle != old.lightAngle { buildVines() }
+    }
+
+    private func setSurfaceScale(_ r: CGFloat) {
+        let r = max(0.3, min(1, r))
+        underwaterScaled.setScale(r)
+        underwater.setScale(1 / r)
     }
 
     private func applyShadowAndWave(_ c: PondConfig) {
