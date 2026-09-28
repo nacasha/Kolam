@@ -28,6 +28,12 @@ enum Settings {
             "windAuto": true,
             "windRipplesOn": true,
             "windRipples": 100.0,
+            "plantsLean": true,
+            "causticsFlow": true,
+            "treesOn": true,
+            "treeSize": 100.0,
+            "koiMoods": true,
+            "koiChase": true,
             "windDirection": 0.0,
             "season": "auto",
             "fallingOn": true,
@@ -64,7 +70,7 @@ enum Settings {
             "reedsOn": true,
             "reedAmount": 100.0,
             "cattails": true,
-            "lowMemory": false,
+            "floorLowRes": false,
             "surfacingOn": true,
             "surfacingRate": 100.0,
             "artStyle": "natural",
@@ -78,6 +84,14 @@ enum Settings {
     static func registerDefaults() {
         d.register(defaults: defaults)
         d.removeObject(forKey: "pondShape")   // shaped ponds were removed
+        // "Low memory mode" was split into individual switches; carry its effect over.
+        if d.object(forKey: "lowMemory") != nil {
+            if d.bool(forKey: "lowMemory") {
+                d.set(true, forKey: "floorLowRes")
+                for key in ["wobbleOn", "splashOn", "windRipplesOn"] { d.set(false, forKey: key) }
+            }
+            d.removeObject(forKey: "lowMemory")
+        }
         // Weather used to include "night"; it's a time of day now.
         if d.string(forKey: "weather") == "night" {
             d.set("clear", forKey: "weather")
@@ -127,6 +141,12 @@ struct PondConfig: Equatable {
     var windDirection: CGFloat?
     var windRipplesOn: Bool
     var windRipples: CGFloat
+    var plantsLean: Bool
+    var causticsFlow: Bool
+    var treesOn: Bool
+    var treeSize: CGFloat
+    var koiMoods: Bool
+    var koiChase: Bool
     var season: Season?
     var fallingOn: Bool
     var fallingAmount: Double
@@ -162,7 +182,7 @@ struct PondConfig: Equatable {
     var reedsOn: Bool
     var reedAmount: CGFloat
     var cattails: Bool
-    var lowMemory: Bool
+    var floorLowRes: Bool
     var surfacingOn: Bool
     var surfacingRate: CGFloat
     var artStyle: ArtStyle
@@ -193,6 +213,12 @@ struct PondConfig: Equatable {
             windDirection: d.bool(forKey: "windAuto") ? nil : CGFloat(d.double(forKey: "windDirection")) * .pi / 180,
             windRipplesOn: d.bool(forKey: "windRipplesOn"),
             windRipples: CGFloat(d.double(forKey: "windRipples") / 100),
+            plantsLean: d.bool(forKey: "plantsLean"),
+            causticsFlow: d.bool(forKey: "causticsFlow"),
+            treesOn: d.bool(forKey: "treesOn"),
+            treeSize: CGFloat(d.double(forKey: "treeSize") / 100),
+            koiMoods: d.bool(forKey: "koiMoods"),
+            koiChase: d.bool(forKey: "koiChase"),
             season: Season(rawValue: d.string(forKey: "season") ?? ""),
             fallingOn: d.bool(forKey: "fallingOn"),
             fallingAmount: d.double(forKey: "fallingAmount") / 100,
@@ -228,7 +254,7 @@ struct PondConfig: Equatable {
             reedsOn: d.bool(forKey: "reedsOn"),
             reedAmount: CGFloat(d.double(forKey: "reedAmount") / 100),
             cattails: d.bool(forKey: "cattails"),
-            lowMemory: d.bool(forKey: "lowMemory"),
+            floorLowRes: d.bool(forKey: "floorLowRes"),
             surfacingOn: d.bool(forKey: "surfacingOn"),
             surfacingRate: CGFloat(d.double(forKey: "surfacingRate") / 100),
             artStyle: ArtStyle(rawValue: d.string(forKey: "artStyle") ?? "") ?? .natural,

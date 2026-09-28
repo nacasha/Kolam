@@ -52,12 +52,12 @@ enum SettingsPage: String, CaseIterable, Identifiable {
         case .light: return "Where the light comes from and how shadows fall."
         case .koi: return "How many koi, how they look and behave."
         case .wildlife: return "Small fish, dragonflies, the frog and the turtle."
-        case .plants: return "Lily pads, reeds and vines."
+        case .plants: return "Lily pads, reeds, vines and the trees around the pond."
         case .time: return "Lighting through the day, from dawn to night."
         case .weather: return "Clouds, rain, storms and wind."
         case .season: return "What falls from above: petals, leaves or snow."
         case .interaction: return "What happens when you click the pond."
-        case .performance: return "Frame rate and memory use."
+        case .performance: return "What each effect costs, and switches to trim memory and CPU."
         case .general: return "Startup and diagnostics."
         }
     }
@@ -104,16 +104,17 @@ enum SettingsPage: String, CaseIterable, Identifiable {
         case .presets: return []
         case .look: return ["artStyle", "pixelSize", "tiltOn", "tiltStrength", "tiltFocus", "tiltBand"]
         case .water: return ["water", "floorStyle", "depth", "depthDarken", "wavesOn", "waveIntensity",
-                             "driftOn", "driftIntensity", "skyOn", "wobbleOn", "wobbleIntensity", "wobbleSize"]
+                             "causticsFlow", "driftOn", "driftIntensity", "skyOn", "wobbleOn", "wobbleIntensity", "wobbleSize"]
         case .light: return ["lightAngle", "shadowStrength", "shadowBlur", "shadowDistance"]
-        case .koi: return ["koiCount", "koiSpeed", "koiSize", "surfacingOn", "surfacingRate"]
+        case .koi: return ["koiCount", "koiSpeed", "koiSize", "surfacingOn", "surfacingRate", "koiMoods", "koiChase"]
         case .wildlife: return ["minnowsOn", "minnowSchools", "minnowFollow", "dragonflies", "frog", "turtle"]
-        case .plants: return ["padsOn", "padClusters", "flowers", "reedsOn", "reedAmount", "cattails", "vinesOn"]
+        case .plants: return ["padsOn", "padClusters", "flowers", "reedsOn", "reedAmount", "cattails", "vinesOn",
+                              "plantsLean", "treesOn", "treeSize"]
         case .time: return ["timeOfDay", "cycleMinutes", "fireflies"]
         case .weather: return ["weather", "windAmount", "windAuto", "windDirection", "windRipplesOn", "windRipples", "lightning", "rainMode", "rainIntensity", "rainDropSize", "rainVary", "rainDim"]
         case .season: return ["season", "fallingOn", "fallingAmount"]
         case .interaction: return ["feedOn", "clickLure", "splashOn", "splashStrength"]
-        case .performance: return ["fps", "lowMemory"]
+        case .performance: return ["fps", "floorLowRes"]
         case .general: return ["showStats"]
         }
     }
@@ -127,12 +128,12 @@ enum SettingsPage: String, CaseIterable, Identifiable {
         case .light: return "shadow blur distance strength direction angle sun"
         case .koi: return "fish count speed size surface gulp"
         case .wildlife: return "minnows small fish dragonfly frog turtle"
-        case .plants: return "lily pads flowers reeds cattails vines"
+        case .plants: return "lily pads flowers reeds cattails vines trees reflections lean wind"
         case .time: return "day night dawn sunset dusk morning afternoon clock cycle fireflies"
         case .weather: return "rain storm thunder lightning wind windy cloudy clouds"
         case .season: return "spring summer autumn winter snow petals leaves falling"
         case .interaction: return "click food feed ripple splash interactive"
-        case .performance: return "fps frame rate memory low"
+        case .performance: return "fps frame rate memory low quality detail cpu gpu distortion ripples pass"
         case .general: return "login startup stats"
         }
     }
@@ -366,6 +367,7 @@ struct WaterPage: View {
     @AppStorage("depth") private var depth = 70.0
     @AppStorage("depthDarken") private var depthDarken = true
     @AppStorage("wavesOn") private var wavesOn = true
+    @AppStorage("causticsFlow") private var causticsFlow = true
     @AppStorage("waveIntensity") private var waveIntensity = 100.0
     @AppStorage("driftOn") private var driftOn = true
     @AppStorage("driftIntensity") private var driftIntensity = 100.0
@@ -373,7 +375,6 @@ struct WaterPage: View {
     @AppStorage("wobbleOn") private var wobbleOn = true
     @AppStorage("wobbleIntensity") private var wobbleIntensity = 60.0
     @AppStorage("wobbleSize") private var wobbleSize = 100.0
-    @AppStorage("lowMemory") private var lowMemory = false
 
     var body: some View {
         Section("Colour") {
@@ -391,6 +392,8 @@ struct WaterPage: View {
             ToggleRow(title: "Light patterns", symbol: "sparkles", note: "Bright caustic lines on the floor.", isOn: $wavesOn)
             if wavesOn {
                 SliderRow(title: "Intensity", value: $waveIntensity, range: 10...200, step: 10, defaultValue: def("waveIntensity"))
+                ToggleRow(title: "Drift with the wind", symbol: "wind",
+                          note: "The light lines slide downwind and shimmer faster in gusts.", isOn: $causticsFlow)
             }
             ToggleRow(title: "Drifting light", symbol: "light.max", isOn: $driftOn)
             if driftOn {
@@ -399,14 +402,9 @@ struct WaterPage: View {
             ToggleRow(title: "Sky reflections", symbol: "cloud", isOn: $skyOn)
         }
         Section {
-            if lowMemory {
-                InfoBanner(symbol: "memorychip", text: "Water distortion is off while Low memory mode is on.",
-                           action: ("Turn off", { lowMemory = false }))
-            }
             ToggleRow(title: "Water distortion", symbol: "water.waves",
                       note: "Everything under the surface wobbles as seen through moving water.", isOn: $wobbleOn)
-                .disabled(lowMemory)
-            if wobbleOn && !lowMemory {
+            if wobbleOn {
                 SliderRow(title: "Intensity", value: $wobbleIntensity, range: 10...250, step: 10, defaultValue: def("wobbleIntensity"))
                 SliderRow(title: "Wave size", value: $wobbleSize, range: 40...250, step: 10, defaultValue: def("wobbleSize"))
             }
@@ -461,6 +459,8 @@ struct KoiPage: View {
     @AppStorage("koiSize") private var koiSize = 100.0
     @AppStorage("surfacingOn") private var surfacingOn = true
     @AppStorage("surfacingRate") private var surfacingRate = 100.0
+    @AppStorage("koiMoods") private var koiMoods = true
+    @AppStorage("koiChase") private var koiChase = true
 
     var body: some View {
         Section("School") {
@@ -479,6 +479,10 @@ struct KoiPage: View {
             if surfacingOn {
                 SliderRow(title: "How often", value: $surfacingRate, range: 20...300, step: 10, defaultValue: def("surfacingRate"))
             }
+            ToggleRow(title: "School moods", symbol: "circle.dotted.circle",
+                      note: "Now and then the koi gather and circle together, or slow down and rest.", isOn: $koiMoods)
+            ToggleRow(title: "Play chase", symbol: "arrow.triangle.turn.up.right.circle",
+                      note: "Sometimes one koi follows another's tail for a few seconds.", isOn: $koiChase)
         }
     }
 }
@@ -520,6 +524,9 @@ struct PlantsPage: View {
     @AppStorage("reedAmount") private var reedAmount = 100.0
     @AppStorage("cattails") private var cattails = true
     @AppStorage("vinesOn") private var vinesOn = true
+    @AppStorage("plantsLean") private var plantsLean = true
+    @AppStorage("treesOn") private var treesOn = true
+    @AppStorage("treeSize") private var treeSize = 100.0
 
     var body: some View {
         Section("On the water") {
@@ -536,6 +543,17 @@ struct PlantsPage: View {
                 ToggleRow(title: "Cattails", isOn: $cattails)
             }
             ToggleRow(title: "Vines", symbol: "leaf.arrow.triangle.circlepath", isOn: $vinesOn)
+            if reedsOn || vinesOn {
+                ToggleRow(title: "Lean with the wind", symbol: "wind", note: "Reeds and vines bend the way the wind blows.",
+                          isOn: $plantsLean)
+            }
+        }
+        Section("Around the pond") {
+            ToggleRow(title: "Tree reflections", symbol: "tree.fill",
+                      note: "Dark leafy crowns mirrored along the top and sides, swaying slowly.", isOn: $treesOn)
+            if treesOn {
+                SliderRow(title: "Size", value: $treeSize, range: 30...250, step: 10, defaultValue: def("treeSize"))
+            }
         }
     }
 }
@@ -596,7 +614,6 @@ struct WeatherPage: View {
     @AppStorage("windAuto") private var windAuto = true
     @AppStorage("windRipplesOn") private var windRipplesOn = true
     @AppStorage("windRipples") private var windRipples = 100.0
-    @AppStorage("lowMemory") private var lowMemory = false
     @AppStorage("windDirection") private var windDirection = 0.0
 
     private var windTowards: String {
@@ -657,10 +674,8 @@ struct WeatherPage: View {
                 .padding(.vertical, 4)
             }
             ToggleRow(title: "Wind ripples", symbol: "water.waves",
-                      note: lowMemory ? "Off in Low memory mode." : "Gusts roughen the water in patches that race downwind.",
-                      isOn: $windRipplesOn)
-                .disabled(lowMemory)
-            if windRipplesOn && !lowMemory {
+                      note: "Gusts roughen the water in patches that race downwind.", isOn: $windRipplesOn)
+            if windRipplesOn {
                 SliderRow(title: "Strength", value: $windRipples, range: 20...300, step: 10, defaultValue: def("windRipples"))
             }
             if ["auto", "storm"].contains(weather) {
@@ -739,7 +754,6 @@ struct InteractionPage: View {
     @AppStorage("clickLure") private var clickLure = true
     @AppStorage("splashOn") private var splashOn = true
     @AppStorage("splashStrength") private var splashStrength = 100.0
-    @AppStorage("lowMemory") private var lowMemory = false
 
     var body: some View {
         Section {
@@ -759,13 +773,8 @@ struct InteractionPage: View {
             }
         }
         Section {
-            if lowMemory {
-                InfoBanner(symbol: "memorychip", text: "Ripples are drawn rings while Low memory mode is on.",
-                           action: ("Turn off", { lowMemory = false }))
-            }
             ToggleRow(title: "Realistic ripples", symbol: "water.waves",
                       note: "Clicks, rain and splashes bend the water instead of drawing rings.", isOn: $splashOn)
-                .disabled(lowMemory)
             SliderRow(title: "Ripple strength", symbol: "dot.radiowaves.left.and.right", value: $splashStrength,
                       range: 20...300, step: 10, defaultValue: def("splashStrength"))
         } header: {
@@ -776,25 +785,101 @@ struct InteractionPage: View {
 
 struct PerformancePage: View {
     @AppStorage("fps") private var fps = 0
-    @AppStorage("lowMemory") private var lowMemory = false
+    @AppStorage("floorLowRes") private var floorLowRes = false
+    @AppStorage("wobbleOn") private var wobbleOn = true
+    @AppStorage("splashOn") private var splashOn = true
+    @AppStorage("windRipplesOn") private var windRipplesOn = true
+    @AppStorage("artStyle") private var artStyle = "natural"
+    @AppStorage("tiltOn") private var tiltOn = false
+    @AppStorage("koiCount") private var koiCount = 8.0
+
+    /// The water surface pass runs if any of its effects is on.
+    private var surfacePass: Bool { wobbleOn || splashOn || windRipplesOn }
+    private var lookPass: Bool { artStyle != "natural" || tiltOn }
+
+    /// Rough memory estimate, from measurements on a 3440×1440 display.
+    private var estimate: Int {
+        180 + (surfacePass ? 440 : 0) + (lookPass ? 180 : 0) + (floorLowRes ? 0 : 5)
+    }
 
     var body: some View {
-        Section("Frame rate") {
+        Section {
+            LabeledContent {
+                Text("about \(estimate) MB").monospacedDigit().font(.headline)
+            } label: { RowLabel(title: "Estimated memory", symbol: "memorychip", note: "Updates as you change the options below.") }
+            HStack {
+                Button {
+                    for key in ["wobbleOn", "splashOn", "windRipplesOn", "tiltOn"] { UserDefaults.standard.set(false, forKey: key) }
+                    UserDefaults.standard.set("natural", forKey: "artStyle")
+                    floorLowRes = true
+                } label: { Label("Save memory", systemImage: "leaf") }
+                Button {
+                    for key in ["wobbleOn", "splashOn", "windRipplesOn"] { UserDefaults.standard.set(true, forKey: key) }
+                    floorLowRes = false
+                } label: { Label("Full quality", systemImage: "sparkles") }
+                Spacer()
+            }
+        } header: {
+            Text("Overview")
+        } footer: {
+            Text("Save memory turns off every full-screen pass and lowers floor detail. Full quality turns the water effects back on; art style and tilt-shift stay as you set them.")
+                .foregroundStyle(.secondary)
+        }
+        Section {
+            ToggleRow(title: "Water distortion", symbol: "water.waves", note: "The swell under the surface.", isOn: $wobbleOn)
+            ToggleRow(title: "Realistic ripples", symbol: "dot.radiowaves.left.and.right",
+                      note: "Off: clicks and rain draw rings instead (a little more CPU).", isOn: $splashOn)
+            ToggleRow(title: "Wind ripples", symbol: "wind", note: "Gusts roughening the water.", isOn: $windRipplesOn)
+        } header: {
+            HStack {
+                Text("Water surface effects")
+                Spacer()
+                Text(surfacePass ? "about 440 MB" : "off").foregroundStyle(.secondary)
+            }
+        } footer: {
+            Text("These share one full-screen pass. It uses memory while any of them is on, and nothing when all three are off.")
+                .foregroundStyle(.secondary)
+        }
+        Section {
+            LabeledContent {
+                Text(lookPass ? (artStyle != "natural" ? "Art style on" : "Tilt-shift on") : "Natural, no tilt-shift")
+                    .foregroundStyle(.secondary)
+            } label: { RowLabel(title: "Look pass", symbol: "paintpalette", note: "Art styles and tilt-shift (set on the Look page).") }
+            if lookPass {
+                Button("Turn off art style and tilt-shift") {
+                    artStyle = "natural"
+                    tiltOn = false
+                }
+            }
+        } header: {
+            HStack {
+                Text("Look")
+                Spacer()
+                Text(lookPass ? "about 180 MB" : "off").foregroundStyle(.secondary)
+            }
+        }
+        Section {
+            Picker(selection: $floorLowRes) {
+                Text("High").tag(false)
+                Text("Low").tag(true)
+            } label: { RowLabel(title: "Floor detail", symbol: "square.stack.3d.down.forward", note: "Low draws the pond floor at half the resolution.") }
+            .pickerStyle(.segmented)
+        } header: {
+            Text("Detail")
+        }
+        Section {
             Picker(selection: $fps) {
                 Text("Display max").tag(0)
                 Text("60 fps").tag(60)
                 Text("30 fps").tag(30)
-            } label: { RowLabel(title: "Frame rate", symbol: "speedometer") }
+            } label: { RowLabel(title: "Frame rate", symbol: "speedometer", note: "Lower saves CPU and GPU.") }
             .pickerStyle(.segmented)
-        }
-        Section {
-            ToggleRow(title: "Low memory mode", symbol: "memorychip",
-                      note: "Skips the full-screen water distortion and draws the floor at lower resolution.", isOn: $lowMemory)
-            LabeledContent {
-                Text(lowMemory ? "about 180 MB" : "about 450–650 MB").foregroundStyle(.secondary)
-            } label: { RowLabel(title: "Typical memory", symbol: "chart.bar") }
+            if koiCount > 16 {
+                InfoBanner(symbol: "fish", text: "\(Int(koiCount)) koi. Each one costs a little CPU; around 8–12 keeps the pond light.",
+                           tint: .yellow, action: ("Set to 10", { koiCount = 10 }))
+            }
         } header: {
-            Text("Memory")
+            Text("CPU")
         } footer: {
             Text("The pond always pauses while it's covered by windows, the screen is locked or the Mac sleeps.")
                 .foregroundStyle(.secondary)

@@ -12,7 +12,7 @@ enum Presets {
     private static let d = UserDefaults.standard
     private static let userKey = "userPresets"
     /// App behaviour, not part of the pond's look.
-    private static let excluded: Set<String> = ["fps", "interactive", "showStats", "paused"]
+    private static let excluded: Set<String> = ["fps", "interactive", "showStats", "paused", "floorLowRes"]
 
     static var sceneKeys: [String] { Settings.defaults.keys.filter { !excluded.contains($0) }.sorted() }
 

@@ -110,6 +110,18 @@ final class Koi {
     private var lureUntil: CGFloat = 0
 
     var head: CGPoint { spine[0] }
+    var tailPoint: CGPoint { spine[spine.count - 1] }
+
+    // Set by KoiMoods: a place to swim toward, and how much calmer/slower to be.
+    var goal: CGPoint?
+    var goalWeight: CGFloat = 1
+    var speedScale: CGFloat = 1
+    var wanderScale: CGFloat = 1
+    /// Playful chase: follow this koi's tail; `fleeing` speeds the one being chased.
+    weak var chasing: Koi?
+    var fleeing = false
+    /// Busy with food or surfacing; the school leaves it alone.
+    var isBusy: Bool { lure != nil || surfacing > 0 }
 
     /// 0 = normal depth, 1 = at the surface; eases in and out over a surfacing.
     private var surfaceLift: CGFloat {
@@ -227,7 +239,7 @@ final class Koi {
         time += dt
 
         // Wander: two slow sine waves give a smooth, non-repeating turn rate.
-        var turn = sin(time * 0.31 + seed) * 0.45 + sin(time * 0.13 + seed * 1.7) * 0.35
+        var turn = (sin(time * 0.31 + seed) * 0.45 + sin(time * 0.13 + seed * 1.7) * 0.35) * wanderScale
 
         // Steer back toward the middle when close to an edge (fish may drift partly off-screen).
         let margin: CGFloat = min(bounds.width, bounds.height) * 0.18
@@ -239,7 +251,7 @@ final class Koi {
         }
 
         // Keep a little distance from other koi.
-        for other in others where other !== self {
+        for other in others where other !== self && other !== chasing && other.chasing !== self {
             let d = hypot(other.head.x - p.x, other.head.y - p.y)
             let minDist = spacing * 11
             if d < minDist, d > 0.01 {
@@ -248,8 +260,21 @@ final class Koi {
             }
         }
 
-        // Head for the lure, faster at first, and lose interest on arrival.
+        // School moods and chasing, unless there's food to go after.
         var boost: CGFloat = 1
+        if lure == nil {
+            if let target = chasing {
+                // Aim just behind the other koi's tail.
+                let t = target.tailPoint
+                turn += angleDiff(atan2(t.y - p.y, t.x - p.x), heading) * 1.8
+                boost = 1.4
+            } else if let g = goal {
+                turn += angleDiff(atan2(g.y - p.y, g.x - p.x), heading) * goalWeight
+            }
+            if fleeing { boost = 1.3 }
+        }
+
+        // Head for the lure, faster at first, and lose interest on arrival.
         if let target = lure {
             let d = hypot(target.x - p.x, target.y - p.y)
             if time > lureUntil || d < spacing * 2 {
@@ -267,7 +292,7 @@ final class Koi {
         bend += (max(-0.8, min(0.8, turn)) - bend) * min(1, dt * 3)
         updateSurfacing(dt: dt)
         let lift = surfaceLift
-        let speed = baseSpeed * boost * (1 - 0.55 * lift) * (0.75 + 0.35 * sin(time * 0.21 + seed * 0.5))
+        let speed = baseSpeed * boost * (lure == nil && chasing == nil && !fleeing ? speedScale : 1) * (1 - 0.55 * lift) * (0.75 + 0.35 * sin(time * 0.21 + seed * 0.5))
         swimPhase += dt * speed * 0.09
 
         // The head swings slightly side to side; the chain turns that into a wave down the body.

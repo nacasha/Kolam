@@ -32,6 +32,9 @@ final class PondScene: SKScene {
     private var geometry: PondGeometry
     private var reeds: SKNode?
     private let atmosphere = Atmosphere()
+    private let moods = KoiMoods()
+    private var causticOffset = CGVector.zero
+    private var causticClock: CGFloat = 0
     private var config = PondConfig.current
     private var elapsed: CGFloat = 0
     private var lastTime: TimeInterval?
@@ -46,7 +49,7 @@ final class PondScene: SKScene {
         anchorPoint = .zero
 
         water.anchorPoint = .zero
-        water.shader = Shaders.makeWater(floor: Floor.bake(size: size, style: config.floorStyle, lowRes: config.lowMemory))
+        water.shader = Shaders.makeWater(floor: Floor.bake(size: size, style: config.floorStyle, lowRes: config.floorLowRes))
         water.zPosition = -10
         shader = Style.make()
         underwaterMask.anchorPoint = .zero
@@ -96,8 +99,8 @@ final class PondScene: SKScene {
 
         applyShadowAndWave(new)
         Shaders.applyWater(new)
-        if new.floorStyle != old.floorStyle || new.lowMemory != old.lowMemory {
-            water.shader = Shaders.makeWater(floor: Floor.bake(size: size, style: new.floorStyle, lowRes: new.lowMemory))
+        if new.floorStyle != old.floorStyle || new.floorLowRes != old.floorLowRes {
+            water.shader = Shaders.makeWater(floor: Floor.bake(size: size, style: new.floorStyle, lowRes: new.floorLowRes))
         }
         // Size and water colour are baked into each fish, so those rebuild the school.
         if new.koiSize != old.koiSize || new.water != old.water || new.depth != old.depth
@@ -143,14 +146,6 @@ final class PondScene: SKScene {
         Wave.keepEnabled = c.splashOn || c.wobbleOn || c.windRipplesOn
         Koi.surfacingOn = c.surfacingOn
         Koi.surfacingRate = c.surfacingRate
-        // Low memory: no full-screen distortion pass; ripples fall back to drawn rings.
-        if c.lowMemory {
-            Wave.amplitude = 0
-            Wave.maxStrength = 0
-            Wave.keepEnabled = false
-            Wave.windRipples = 0
-            Ripple.realistic = false
-        }
     }
 
     // MARK: Creatures
@@ -327,6 +322,18 @@ final class PondScene: SKScene {
         }
         frog?.update(dt: dt, pads: pads, surface: surfaceLayer)
         turtle?.update(dt: dt, bounds: bounds, pads: pads, surface: surfaceLayer)
+        moods.update(dt: koiDt, koi: koi, bounds: bounds, unit: unit, moods: config.koiMoods, chase: config.koiChase)
+        PlantLean.apply(to: reeds, windAngle: Wave.windAngle, strength: atmosphere.windStrength,
+                        enabled: config.plantsLean, dt: dt)
+        PlantLean.apply(to: vines, windAngle: Wave.windAngle, strength: atmosphere.windStrength,
+                        enabled: config.plantsLean, dt: dt)
+        // Caustics: drift downwind and flicker faster as the wind picks up.
+        let flowing = config.causticsFlow ? min(4, atmosphere.windStrength) : 0
+        causticOffset.dx += atmosphere.wind.dx * 0.35 * (flowing > 0 ? 1 : 0) * dt
+        causticOffset.dy += atmosphere.wind.dy * 0.35 * (flowing > 0 ? 1 : 0) * dt
+        causticClock += dt * (1 + 0.45 * flowing)
+        Shaders.applyFlow(offset: causticOffset, clock: causticClock,
+                          treeSize: config.treesOn ? 190 * unit * config.treeSize : 0)
         Floating.wind = atmosphere.wind
         Wave.windAngle = atan2(atmosphere.wind.dy, atmosphere.wind.dx)
         Wave.windStrength = atmosphere.windStrength
@@ -366,6 +373,16 @@ enum Shaders {
         sky.floatValue = config.skyOn ? 1 : 0
     }
 
+    private static let flow = SKUniform(name: "u_flow", vectorFloat4: .zero)
+    private static let trees = SKUniform(name: "u_trees", vectorFloat4: .zero)
+
+    /// Caustic drift (offset in points and a clock that runs faster in wind), and tree
+    /// reflection size in points (0 = off).
+    static func applyFlow(offset: CGVector, clock: CGFloat, treeSize: CGFloat) {
+        flow.vectorFloat4Value = vector_float4(Float(offset.dx), Float(offset.dy), Float(clock), 0)
+        trees.vectorFloat4Value = vector_float4(Float(treeSize), Float(clock), 0, 0)
+    }
+
     static func applyAtmosphere(rain r: CGFloat, night n: CGFloat) {
         rain.floatValue = Float(r)
         night.floatValue = Float(n)
@@ -390,6 +407,23 @@ enum Shaders {
             c /= 4.0;
             c = 1.17 - pow(c, 1.4);
             return clamp(pow(abs(c), 8.0), 0.0, 1.0);
+        }
+
+        // Height of a row of rounded tree crowns at position x (crowns about `spacing` apart).
+        float crowns(float x, float spacing, float seed) {
+            float c = floor(x / spacing);
+            float h = 0.0;
+            for (int k = -1; k <= 1; k++) {
+                float id = c + float(k);
+                float r1 = fract(sin(id * 127.1 + seed) * 43758.5453);
+                float r2 = fract(sin(id * 311.7 + seed) * 12543.123);
+                float centre = (id + 0.2 + r1 * 0.6) * spacing;
+                float radius = spacing * (0.38 + r2 * 0.3);
+                float height = 0.3 + 0.7 * r1 * r2 + 0.25 * r2;
+                float u = (x - centre) / radius;
+                h = max(h, sqrt(max(0.0, 1.0 - u * u)) * height);
+            }
+            return h;
         }
 
         float hash21(vec2 p) {
@@ -423,10 +457,12 @@ enum Shaders {
             float calm = (1.0 - 0.5 * u_rain - 0.6 * u_night) * (1.3 - u_depth);
 
             if (u_light_amount > 0.0) {
-                float t = u_time * 0.18 + 23.0;
+                // The clock runs faster in wind, and the pattern drifts downwind.
+                float t = u_flow.z * 0.18 + 23.0;
+                vec2 fp = px - u_flow.xy;
                 // Two caustic layers at different scales and angles, so the tiling never lines up.
-                vec2 q = mat2(0.8, -0.6, 0.6, 0.8) * px;
-                float light = caustic(px, 900.0, t) * 0.6 + caustic(q + 311.0, 610.0, t * 0.83 + 7.0) * 0.4;
+                vec2 q = mat2(0.8, -0.6, 0.6, 0.8) * (px - u_flow.xy * 0.7);
+                float light = caustic(fp, 900.0, t) * 0.6 + caustic(q + 311.0, 610.0, t * 0.83 + 7.0) * 0.4;
                 col += u_light_color * light * u_light_amount * calm;
             }
 
@@ -445,11 +481,37 @@ enum Shaders {
                 col = mix(col, skyCol, smoothstep(0.55, 0.95, s) * u_sky * 0.10);
             }
 
+            // Tree reflections: dark, leafy crowns mirrored along the top and upper sides,
+            // swaying slowly. They're under the surface pass, so ripples bend them too.
+            if (u_trees.x > 0.0) {
+                float sz = u_trees.x;
+                float tt = u_trees.y;
+                float sway = sin(tt * 0.45) * 7.0 + sin(tt * 0.19 + 1.0) * 5.0;
+                float top = a_size.y - px.y;
+                float xx = px.x + sway;
+                // Big crowns in front, smaller ones peeking out behind, lumpy leafy edges.
+                float edgeN = (vnoise(vec2(xx / 22.0, top / 22.0)) - 0.5) * 30.0;
+                float h = sz * max(crowns(xx, 300.0, 1.0), crowns(xx + 120.0, 170.0, 7.0) * 0.55) + edgeN;
+                float m = 1.0 - smoothstep(h - 34.0, h + 10.0, top);
+                float yy = px.y + sway * 0.6;
+                float hs = sz * 0.7 * max(crowns(yy, 260.0, 3.0), crowns(yy + 80.0, 150.0, 9.0) * 0.55)
+                         + (vnoise(vec2(yy / 22.0, px.x / 22.0)) - 0.5) * 30.0;
+                float upper = smoothstep(a_size.y * 0.3, a_size.y * 0.8, px.y);
+                m = max(m, (1.0 - smoothstep(hs - 34.0, hs + 10.0, px.x)) * upper);
+                m = max(m, (1.0 - smoothstep(hs - 34.0, hs + 10.0, a_size.x - px.x)) * upper);
+                // Gaps between leaves let the water show through.
+                vec2 lp = (px + vec2(sway * 1.5, 0.0)) / 30.0;
+                float leaves = vnoise(lp) * 0.6 + vnoise(lp * 2.7 + 9.0) * 0.4;
+                m *= 0.6 + 0.4 * smoothstep(0.3, 0.75, leaves);
+                vec3 treeCol = mix(vec3(0.04, 0.09, 0.05), vec3(0.01, 0.02, 0.04), u_night);
+                col = mix(col, treeCol, m * 0.58);
+            }
+
             gl_FragColor = vec4(col, 1.0);
         }
         """)
         s.attributes = [SKAttribute(name: "a_size", type: .vectorFloat2)]
-        s.uniforms = [lo, hi, spotDark, spotLight, depth, floorOn, lightColor, lightAmount, drift, sky, rain, night,
+        s.uniforms = [lo, hi, spotDark, spotLight, depth, floorOn, lightColor, lightAmount, drift, sky, rain, night, flow, trees,
                       SKUniform(name: "u_floor", texture: floor)]
         return s
     }

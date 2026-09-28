@@ -368,6 +368,12 @@ enum Vines {
         let sway = SKAction.rotate(byAngle: 0.025, duration: .random(in: 3...4.5))
         sway.timingMode = .easeInEaseOut
         container.run(.repeatForever(.sequence([sway, sway.reversed()])))
-        return container
+        // Vines are long and rooted at the bank: they lean a little, pivoting at the root.
+        let outer = SKNode()
+        outer.position = container.position
+        container.position = .zero
+        outer.addChild(container)
+        outer.userData = ["lean": angles.first ?? 0, "stiffness": 0.35]
+        return outer
     }
 }

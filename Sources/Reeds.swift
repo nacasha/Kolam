@@ -73,19 +73,34 @@ enum Reeds {
         let o = Depth.offset(CGVector(dx: 14 * u, dy: -18 * u))
         let shadowAlpha = 0.22 * Depth.shadowAlpha
 
+        /// Where a point on a stalk casts its shadow: the base stays put, and the higher
+        /// up the stalk (further along it), the further the shadow falls away from the light.
+        func shadowOf(_ p: CGPoint) -> CGPoint {
+            let height = hypot(p.x, p.y) / (100 * u)
+            return CGPoint(x: p.x + o.dx * height, y: p.y + o.dy * height)
+        }
+
+        /// A blade and its shadow. Both start at the clump's base, so the shadow is attached.
         func blade(_ tex: SKTexture, _ color: SKColor, length: CGFloat, width: CGFloat, angle: CGFloat, z: CGFloat) {
-            for isShadow in [true, false] {
-                let b = SKSpriteNode(texture: tex)
-                b.color = isShadow ? .black : color
-                b.colorBlendFactor = 1
-                b.alpha = isShadow ? shadowAlpha : 1
-                b.anchorPoint = CGPoint(x: 0, y: 0.5)
-                b.size = CGSize(width: length, height: width)
-                b.zRotation = angle
-                b.position = isShadow ? CGPoint(x: o.dx, y: o.dy) : .zero
-                b.zPosition = isShadow ? -1 : z
-                clump.addChild(b)
-            }
+            let tip = shadowOf(CGPoint(x: cos(angle) * length, y: sin(angle) * length))
+            let shadow = SKSpriteNode(texture: tex)
+            shadow.color = .black
+            shadow.colorBlendFactor = 1
+            shadow.alpha = shadowAlpha
+            shadow.anchorPoint = CGPoint(x: 0, y: 0.5)
+            shadow.size = CGSize(width: hypot(tip.x, tip.y), height: width * 1.15)
+            shadow.zRotation = atan2(tip.y, tip.x)
+            shadow.zPosition = -1
+            clump.addChild(shadow)
+
+            let b = SKSpriteNode(texture: tex)
+            b.color = color
+            b.colorBlendFactor = 1
+            b.anchorPoint = CGPoint(x: 0, y: 0.5)
+            b.size = CGSize(width: length, height: width)
+            b.zRotation = angle
+            b.zPosition = z
+            clump.addChild(b)
         }
 
         for k in 0..<Int.random(in: 8...15) {
@@ -112,9 +127,12 @@ enum Reeds {
                 headShadow.color = .black
                 headShadow.colorBlendFactor = 1
                 headShadow.alpha = shadowAlpha
-                headShadow.size = head.size
-                headShadow.zRotation = a
-                headShadow.position = CGPoint(x: head.position.x + o.dx * 1.6, y: head.position.y + o.dy * 1.6)
+                // On the stalk's shadow, at the same point along it.
+                let from = shadowOf(CGPoint(x: cos(a) * len * 0.66, y: sin(a) * len * 0.66))
+                let to = shadowOf(CGPoint(x: cos(a) * len * 0.9, y: sin(a) * len * 0.9))
+                headShadow.size = CGSize(width: max(head.size.width, hypot(to.x - from.x, to.y - from.y)), height: head.size.height)
+                headShadow.zRotation = atan2(to.y - from.y, to.x - from.x)
+                headShadow.position = CGPoint(x: (from.x + to.x) / 2, y: (from.y + to.y) / 2)
                 headShadow.zPosition = -1
                 clump.addChild(headShadow)
                 clump.addChild(head)
@@ -124,6 +142,12 @@ enum Reeds {
         let sway = SKAction.rotate(byAngle: .random(in: 0.025...0.05), duration: .random(in: 2.2...3.6))
         sway.timingMode = .easeInEaseOut
         clump.run(.sequence([.wait(forDuration: .random(in: 0...2)), .repeatForever(.sequence([sway, sway.reversed()]))]))
-        return clump
+        // The outer node leans with the wind (set each frame); the clump inside keeps swaying.
+        let outer = SKNode()
+        outer.position = clump.position
+        clump.position = .zero
+        outer.addChild(clump)
+        outer.userData = ["lean": out, "stiffness": 1.0]
+        return outer
     }
 }
