@@ -219,6 +219,11 @@ enum Wave {
 /// drifting until the water's drag slows it; the swell rocks it gently in place.
 struct Floating {
     var velocity = CGVector.zero
+
+    mutating func stop() {
+        velocity = .zero
+        spin = 0
+    }
     var spin: CGFloat = 0
     private var bob = CGVector.zero
     /// 1 = a petal-sized thing; heavier things (big pads) move less.

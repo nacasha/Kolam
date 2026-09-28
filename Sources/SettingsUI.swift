@@ -134,7 +134,7 @@ struct SwatchPicker: View {
     @Binding var selection: String
 
     var body: some View {
-        HStack(spacing: 14) {
+        LazyVGrid(columns: [GridItem(.adaptive(minimum: 64), spacing: 10)], spacing: 12) {
             ForEach(WaterPreset.all, id: \.name) { preset in
                 let selected = selection == preset.name
                 Button { selection = preset.name } label: {
@@ -177,6 +177,46 @@ struct InfoBanner: View {
     }
 }
 
+/// Wind direction dial: drag to point where the wind blows toward.
+struct WindDial: View {
+    @Binding var angle: Double
+    var enabled = true
+
+    var body: some View {
+        GeometryReader { geo in
+            let size = min(geo.size.width, geo.size.height)
+            let r = size / 2 - 10
+            let a = angle * .pi / 180
+            ZStack {
+                Circle().strokeBorder(Color.primary.opacity(0.15), lineWidth: 1)
+                ForEach(0..<3) { k in
+                    Image(systemName: "wind")
+                        .font(.system(size: 11))
+                        .foregroundStyle(Color.teal.opacity(0.35))
+                        .offset(x: CGFloat(k - 1) * 12 - 6, y: CGFloat(k - 1) * 10)
+                        .rotationEffect(.radians(-a))
+                }
+                Image(systemName: "location.north.fill")
+                    .font(.system(size: 20))
+                    .foregroundStyle(enabled ? Color.teal : Color.secondary)
+                    .rotationEffect(.radians(.pi / 2 - a))
+                    .offset(x: cos(a) * r * 0.62, y: -sin(a) * r * 0.62)
+            }
+            .frame(width: size, height: size)
+            .contentShape(Circle())
+            .gesture(DragGesture(minimumDistance: 0).onChanged { g in
+                guard enabled else { return }
+                let dx = g.location.x - size / 2, dy = size / 2 - g.location.y
+                var deg = atan2(dy, dx) * 180 / .pi
+                if deg < 0 { deg += 360 }
+                angle = (deg / 5).rounded() * 5
+            })
+        }
+        .frame(width: 92, height: 92)
+        .opacity(enabled ? 1 : 0.5)
+    }
+}
+
 /// Light direction dial: drag or click to point the light; shadows fall the other way.
 struct LightDial: View {
     @Binding var angle: Double
@@ -214,4 +254,63 @@ struct LightDial: View {
 
 extension Comparable {
     func clamped(to r: ClosedRange<Self>) -> Self { min(max(self, r.lowerBound), r.upperBound) }
+}
+
+/// Pond floor choices as picture tiles, previewed in the current water colour.
+struct FloorPicker: View {
+    @Binding var selection: String
+    let water: String
+    @State private var previews: [String: CGImage] = [:]
+
+    private let styles: [(tag: String, title: String)] = [
+        ("original", "Original"), ("sand", "Sand"), ("stones", "Stones"), ("gravel", "Gravel"),
+        ("moss", "Moss"), ("slate", "Slate"), ("clay", "Cracked clay"), ("plain", "Plain"),
+    ]
+
+    var body: some View {
+        LazyVGrid(columns: [GridItem(.adaptive(minimum: 118), spacing: 10)], spacing: 10) {
+            ForEach(styles, id: \.tag) { s in
+                let selected = selection == s.tag
+                Button { selection = s.tag } label: {
+                    VStack(spacing: 5) {
+                        ZStack {
+                            RoundedRectangle(cornerRadius: 8, style: .continuous).fill(Color.primary.opacity(0.06))
+                            if let img = previews[s.tag] {
+                                Image(decorative: img, scale: 1).resizable().scaledToFill()
+                            } else {
+                                ProgressView().controlSize(.small)
+                            }
+                        }
+                        .frame(height: 64)
+                        .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 8, style: .continuous)
+                                .strokeBorder(selected ? Color.accentColor : Color.primary.opacity(0.1), lineWidth: selected ? 2.5 : 1)
+                        )
+                        Text(s.title).font(.caption).foregroundStyle(selected ? Color.accentColor : .secondary)
+                    }
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+            }
+        }
+        .padding(.vertical, 4)
+        .task(id: water) { await render() }
+    }
+
+    /// Bakes the previews off the main thread; they take a moment each.
+    private func render() async {
+        let preset = WaterPreset.named(water)
+        let tags = styles.map(\.tag)
+        let images = await Task.detached(priority: .userInitiated) { () -> [String: CGImage] in
+            var result: [String: CGImage] = [:]
+            for tag in tags {
+                if let style = FloorStyle(rawValue: tag), let img = Floor.preview(style: style, water: preset) {
+                    result[tag] = img
+                }
+            }
+            return result
+        }.value
+        previews = images
+    }
 }

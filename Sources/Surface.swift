@@ -100,25 +100,47 @@ final class LilyPad {
         update(dt: 0, time: 0, bounds: .infinite)
     }
 
+    /// Places the pad just outside an upwind edge, so the wind carries it in.
+    /// With little wind, any edge will do.
+    private func reenter(bounds b: CGRect, margin: CGFloat) {
+        let wind = Floating.wind
+        let strength = hypot(wind.dx, wind.dy)
+        // Each edge's outward direction; an edge is upwind when it points against the wind.
+        let edges: [(CGVector, () -> CGPoint)] = [
+            (CGVector(dx: -1, dy: 0), { CGPoint(x: b.minX - margin * 0.9, y: .random(in: b.minY...b.maxY)) }),
+            (CGVector(dx: 1, dy: 0), { CGPoint(x: b.maxX + margin * 0.9, y: .random(in: b.minY...b.maxY)) }),
+            (CGVector(dx: 0, dy: -1), { CGPoint(x: .random(in: b.minX...b.maxX), y: b.minY - margin * 0.9) }),
+            (CGVector(dx: 0, dy: 1), { CGPoint(x: .random(in: b.minX...b.maxX), y: b.maxY + margin * 0.9) }),
+        ]
+        let weights = edges.map { e -> CGFloat in
+            guard strength > 1 else { return 1 }
+            return max(0, -(e.0.dx * wind.dx + e.0.dy * wind.dy) / strength)
+        }
+        let total = weights.reduce(0, +)
+        var pick = CGFloat.random(in: 0..<max(total, 0.0001))
+        var chosen = edges.count - 1
+        for (k, w) in weights.enumerated() {
+            if pick < w { chosen = k; break }
+            pick -= w
+        }
+        node.position = edges[chosen].1()
+        node.zRotation = .random(in: 0..<(2 * .pi))
+        floating.stop()
+        // Nudge inward so it drifts into view even in still air.
+        let n = edges[chosen].0
+        floating.velocity = CGVector(dx: -n.dx * 12, dy: -n.dy * 12)
+    }
+
     func update(dt: CGFloat, time: CGFloat, bounds: CGRect) {
         // Slow drift plus a gentle bob; wrap around so pads never pile up at an edge.
         node.position.x += (drift.dx + sin(time * 0.2 + seed) * 2) * dt
         node.position.y += (drift.dy + cos(time * 0.17 + seed) * 2) * dt
         node.zRotation += spin * dt
-        if bounds != .infinite {
-            let m: CGFloat = 120
-            if node.position.x < bounds.minX - m { node.position.x = bounds.maxX + m }
-            if node.position.x > bounds.maxX + m { node.position.x = bounds.minX - m }
-            if node.position.y < bounds.minY - m { node.position.y = bounds.maxY + m }
-            if node.position.y > bounds.maxY + m { node.position.y = bounds.minY - m }
-        }
         floating.step(node, dt: dt)
-        // Pushed out of the water (shaped ponds): the bank bumps it back.
-        if bounds != .infinite, !bounds.insetBy(dx: -40, dy: -40).contains(node.position) {
-            let back = CGVector(dx: bounds.midX - node.position.x, dy: bounds.midY - node.position.y)
-            let len = max(1, hypot(back.dx, back.dy))
-            floating.velocity.dx += back.dx / len * 60 * dt
-            floating.velocity.dy += back.dy / len * 60 * dt
+        // Gone off-screen: float back in from the side the wind blows from.
+        let margin = radius * 1.6 + 40
+        if bounds != .infinite, !bounds.insetBy(dx: -margin, dy: -margin).contains(node.position) {
+            reenter(bounds: bounds, margin: margin)
         }
         let o = Depth.offset(CGVector(dx: 14, dy: -20))
         shadow.position = CGPoint(x: node.position.x + o.dx, y: node.position.y + o.dy)

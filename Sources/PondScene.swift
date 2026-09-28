@@ -30,7 +30,6 @@ final class PondScene: SKScene {
     private let food = Food()
     private var turtle: Turtle?
     private var geometry: PondGeometry
-    private var bank: SKNode?
     private var reeds: SKNode?
     private let atmosphere = Atmosphere()
     private var config = PondConfig.current
@@ -40,7 +39,7 @@ final class PondScene: SKScene {
     private var unit: CGFloat { min(size.width, size.height) / 1100 }
 
     override init(size: CGSize) {
-        geometry = PondGeometry(shape: config.pondShape, size: size)
+        geometry = PondGeometry(size: size)
         super.init(size: size)
         scaleMode = .resizeFill
         backgroundColor = .black
@@ -82,7 +81,7 @@ final class PondScene: SKScene {
         setFrog(config.frog)
         setTurtle(config.turtle)
         buildVines()
-        buildBank()
+        buildReeds()
     }
 
     required init?(coder: NSCoder) { fatalError("not used") }
@@ -117,15 +116,9 @@ final class PondScene: SKScene {
         if new.frog != old.frog { setFrog(new.frog) }
         let shadowsChanged = new.depth != old.depth || new.shadowStrength != old.shadowStrength
             || new.shadowDistance != old.shadowDistance || new.lightAngle != old.lightAngle || new.shadowBlur != old.shadowBlur
-        if new.pondShape != old.pondShape {
-            geometry = PondGeometry(shape: new.pondShape, size: size)
-            food.clear()
-            spawnPads()
-            spawnMinnows()
-        }
-        if new.pondShape != old.pondShape || new.reedsOn != old.reedsOn || new.reedAmount != old.reedAmount
+        if new.reedsOn != old.reedsOn || new.reedAmount != old.reedAmount
             || new.cattails != old.cattails || shadowsChanged {
-            buildBank()
+            buildReeds()
         }
         if new.turtle != old.turtle || new.water != old.water || new.depth != old.depth
             || new.depthDarken != old.depthDarken { setTurtle(new.turtle) }
@@ -203,12 +196,9 @@ final class PondScene: SKScene {
                         water: config.water.mid(depth: Depth.visual), underwater: underwaterClip, shadows: shadowLayer)
     }
 
-    /// Bank (for shaped ponds) and reeds along the water's edge.
-    private func buildBank() {
-        bank?.removeFromParent()
+    /// Reeds along the edges of the pond.
+    private func buildReeds() {
         reeds?.removeFromParent()
-        bank = Bank.build(geometry, unit: unit)
-        bank.map(addChild)
         reeds = nil
         guard config.reedsOn else { return }
         let r = Reeds.build(geometry, unit: unit, amount: config.reedAmount, cattails: config.cattails)
@@ -283,8 +273,6 @@ final class PondScene: SKScene {
 
     override func mouseDown(with event: NSEvent) {
         let point = event.location(in: self)
-        // Clicks on the bank don't touch the water.
-        guard geometry.contains(point) else { return }
         Ripple.spawn(at: point, in: surfaceLayer, size: 240 * unit)
         if config.feedOn {
             food.drop(at: point, unit: unit, surface: surfaceLayer, shadows: shadowLayer)

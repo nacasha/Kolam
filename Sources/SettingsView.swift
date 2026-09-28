@@ -48,7 +48,7 @@ enum SettingsPage: String, CaseIterable, Identifiable {
         switch self {
         case .presets: return "Switch the whole pond's look in one click, or save your own."
         case .look: return "Art style and camera focus for the whole scene."
-        case .water: return "Colour, pond shape, floor, depth and how the surface moves."
+        case .water: return "Colour, floor, depth and how the surface moves."
         case .light: return "Where the light comes from and how shadows fall."
         case .koi: return "How many koi, how they look and behave."
         case .wildlife: return "Small fish, dragonflies, the frog and the turtle."
@@ -103,14 +103,14 @@ enum SettingsPage: String, CaseIterable, Identifiable {
         switch self {
         case .presets: return []
         case .look: return ["artStyle", "pixelSize", "tiltOn", "tiltStrength", "tiltFocus", "tiltBand"]
-        case .water: return ["water", "pondShape", "floorStyle", "depth", "depthDarken", "wavesOn", "waveIntensity",
+        case .water: return ["water", "floorStyle", "depth", "depthDarken", "wavesOn", "waveIntensity",
                              "driftOn", "driftIntensity", "skyOn", "wobbleOn", "wobbleIntensity", "wobbleSize"]
         case .light: return ["lightAngle", "shadowStrength", "shadowBlur", "shadowDistance"]
         case .koi: return ["koiCount", "koiSpeed", "koiSize", "surfacingOn", "surfacingRate"]
         case .wildlife: return ["minnowsOn", "minnowSchools", "minnowFollow", "dragonflies", "frog", "turtle"]
         case .plants: return ["padsOn", "padClusters", "flowers", "reedsOn", "reedAmount", "cattails", "vinesOn"]
         case .time: return ["timeOfDay", "cycleMinutes", "fireflies"]
-        case .weather: return ["weather", "windAmount", "lightning", "rainMode", "rainIntensity", "rainDropSize", "rainVary", "rainDim"]
+        case .weather: return ["weather", "windAmount", "windAuto", "windDirection", "lightning", "rainMode", "rainIntensity", "rainDropSize", "rainVary", "rainDim"]
         case .season: return ["season", "fallingOn", "fallingAmount"]
         case .interaction: return ["feedOn", "clickLure", "splashOn", "splashStrength"]
         case .performance: return ["fps", "lowMemory"]
@@ -123,7 +123,7 @@ enum SettingsPage: String, CaseIterable, Identifiable {
         switch self {
         case .presets: return "save theme"
         case .look: return "art painterly ink pixel tilt shift blur focus style"
-        case .water: return "colour color shape bank floor stones sand gravel moss slate clay depth distortion wobble caustic light patterns reflection"
+        case .water: return "colour color turquoise emerald glacier tea stone midnight floor stones sand gravel moss slate clay depth distortion wobble caustic light patterns reflection"
         case .light: return "shadow blur distance strength direction angle sun"
         case .koi: return "fish count speed size surface gulp"
         case .wildlife: return "minnows small fish dragonfly frog turtle"
@@ -362,7 +362,6 @@ struct LookPage: View {
 
 struct WaterPage: View {
     @AppStorage("water") private var water = "deep"
-    @AppStorage("pondShape") private var pondShape = "full"
     @AppStorage("floorStyle") private var floorStyle = "original"
     @AppStorage("depth") private var depth = 70.0
     @AppStorage("depthDarken") private var depthDarken = true
@@ -380,22 +379,8 @@ struct WaterPage: View {
         Section("Colour") {
             SwatchPicker(selection: $water)
         }
-        Section("Pond") {
-            ChipPicker(choices: [
-                Choice(tag: "full", title: "Fill screen", symbol: "rectangle.fill"),
-                Choice(tag: "rounded", title: "Rounded", symbol: "capsule.fill"),
-                Choice(tag: "natural", title: "Natural", symbol: "drop.fill"),
-            ], selection: $pondShape, minWidth: 110)
-            Picker(selection: $floorStyle) {
-                Text("Original").tag("original")
-                Text("Sand").tag("sand")
-                Text("Stones").tag("stones")
-                Text("Gravel").tag("gravel")
-                Text("Moss").tag("moss")
-                Text("Slate").tag("slate")
-                Text("Cracked clay").tag("clay")
-                Text("Plain").tag("plain")
-            } label: { RowLabel(title: "Floor", symbol: "square.stack.3d.down.forward") }
+        Section("Pond floor") {
+            FloorPicker(selection: $floorStyle, water: water)
             SliderRow(title: "Depth", symbol: "arrow.down.to.line", value: $depth, range: 0...100, step: 5, defaultValue: def("depth"))
             ToggleRow(title: "Darken deep water", symbol: "moon.haze",
                       note: depthDarken ? "Deeper water hides the floor and gets darker."
@@ -608,6 +593,13 @@ struct WeatherPage: View {
     @AppStorage("weather") private var weather = "auto"
     @AppStorage("windAmount") private var windAmount = 100.0
     @AppStorage("lightning") private var lightning = true
+    @AppStorage("windAuto") private var windAuto = true
+    @AppStorage("windDirection") private var windDirection = 0.0
+
+    private var windTowards: String {
+        let names = ["right", "upper right", "top", "upper left", "left", "lower left", "bottom", "lower right"]
+        return names[Int(((windDirection + 22.5).truncatingRemainder(dividingBy: 360)) / 45) % 8]
+    }
     @AppStorage("rainMode") private var rainMode = "auto"
     @AppStorage("rainIntensity") private var rainIntensity = 100.0
     @AppStorage("rainDropSize") private var rainDropSize = 100.0
@@ -640,6 +632,27 @@ struct WeatherPage: View {
         }
         Section {
             SliderRow(title: "Wind", symbol: "wind", value: $windAmount, range: 0...300, step: 10, defaultValue: def("windAmount"))
+            if windAmount > 0 {
+                HStack(spacing: 18) {
+                    WindDial(angle: $windDirection, enabled: !windAuto)
+                    VStack(alignment: .leading, spacing: 6) {
+                        Picker("", selection: $windAuto) {
+                            Text("Wanders").tag(true)
+                            Text("Fixed direction").tag(false)
+                        }
+                        .pickerStyle(.segmented)
+                        .labelsHidden()
+                        .fixedSize()
+                        Text(windAuto ? "The wind slowly changes direction on its own."
+                                      : "Blowing toward the \(windTowards). Drag the arrow to change it.")
+                            .font(.callout).foregroundStyle(.secondary)
+                        if !windAuto {
+                            Text("\(Int(windDirection))°").monospacedDigit().foregroundStyle(.secondary)
+                        }
+                    }
+                }
+                .padding(.vertical, 4)
+            }
             if ["auto", "storm"].contains(weather) {
                 ToggleRow(title: "Lightning in storms", symbol: "bolt.fill", isOn: $lightning)
             }

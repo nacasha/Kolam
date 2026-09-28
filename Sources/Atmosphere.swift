@@ -343,7 +343,13 @@ final class Atmosphere {
         let gust = w == .windy || w == .storm
             ? 1 + 0.7 * max(0, sin(time * 0.37) * sin(time * 0.91 + 1.7)) : 1
         windStrength = windLevel * gust
-        windAngle += .random(in: -1...1) * (w == .windy ? 0.25 : 0.6) * dt
+        if let fixed = c.windDirection {
+            // Steady direction, with a small natural waver.
+            let target = fixed + 0.12 * sin(time * 0.23) + 0.06 * sin(time * 0.71)
+            windAngle += angleDelta(target, windAngle) * min(1, dt * 0.8)
+        } else {
+            windAngle += .random(in: -1...1) * (w == .windy ? 0.25 : 0.6) * dt
+        }
         wind = CGVector(dx: cos(windAngle) * 14 * u * windStrength, dy: sin(windAngle) * 10 * u * windStrength)
 
         // Overall light: time-of-day tint, darkened by clouds and rain.

@@ -25,6 +25,8 @@ enum Settings {
             "cycleMinutes": 20.0,
             "windAmount": 100.0,
             "lightning": true,
+            "windAuto": true,
+            "windDirection": 0.0,
             "season": "auto",
             "fallingOn": true,
             "fallingAmount": 100.0,
@@ -57,7 +59,6 @@ enum Settings {
             "splashStrength": 100.0,
                 "feedOn": true,
             "turtle": true,
-            "pondShape": "full",
             "reedsOn": true,
             "reedAmount": 100.0,
             "cattails": true,
@@ -74,6 +75,7 @@ enum Settings {
 
     static func registerDefaults() {
         d.register(defaults: defaults)
+        d.removeObject(forKey: "pondShape")   // shaped ponds were removed
         // Weather used to include "night"; it's a time of day now.
         if d.string(forKey: "weather") == "night" {
             d.set("clear", forKey: "weather")
@@ -119,6 +121,8 @@ struct PondConfig: Equatable {
     var cycleMinutes: CGFloat
     var windAmount: CGFloat
     var lightning: Bool
+    /// Direction the wind blows toward, in radians; nil = wanders on its own.
+    var windDirection: CGFloat?
     var season: Season?
     var fallingOn: Bool
     var fallingAmount: Double
@@ -151,7 +155,6 @@ struct PondConfig: Equatable {
     var splashStrength: CGFloat
     var feedOn: Bool
     var turtle: Bool
-    var pondShape: PondShape
     var reedsOn: Bool
     var reedAmount: CGFloat
     var cattails: Bool
@@ -183,6 +186,7 @@ struct PondConfig: Equatable {
             cycleMinutes: CGFloat(d.double(forKey: "cycleMinutes")),
             windAmount: CGFloat(d.double(forKey: "windAmount") / 100),
             lightning: d.bool(forKey: "lightning"),
+            windDirection: d.bool(forKey: "windAuto") ? nil : CGFloat(d.double(forKey: "windDirection")) * .pi / 180,
             season: Season(rawValue: d.string(forKey: "season") ?? ""),
             fallingOn: d.bool(forKey: "fallingOn"),
             fallingAmount: d.double(forKey: "fallingAmount") / 100,
@@ -215,7 +219,6 @@ struct PondConfig: Equatable {
             splashStrength: CGFloat(d.double(forKey: "splashStrength") / 100),
             feedOn: d.bool(forKey: "feedOn"),
             turtle: d.bool(forKey: "turtle"),
-            pondShape: PondShape(rawValue: d.string(forKey: "pondShape") ?? "") ?? .full,
             reedsOn: d.bool(forKey: "reedsOn"),
             reedAmount: CGFloat(d.double(forKey: "reedAmount") / 100),
             cattails: d.bool(forKey: "cattails"),
@@ -245,6 +248,12 @@ struct WaterPreset: Equatable {
         WaterPreset(name: "lagoon", lo: [18, 100, 135], hi: [70, 176, 200], spotDark: [5, 40, 60], spotLight: [150, 220, 240]),
         WaterPreset(name: "moss", lo: [38, 64, 38], hi: [88, 118, 66], spotDark: [15, 25, 10], spotLight: [120, 140, 90]),
         WaterPreset(name: "ink", lo: [8, 18, 30], hi: [26, 46, 66], spotDark: [0, 5, 12], spotLight: [60, 80, 110]),
+        WaterPreset(name: "turquoise", lo: [24, 140, 150], hi: [100, 212, 210], spotDark: [8, 70, 80], spotLight: [170, 240, 235]),
+        WaterPreset(name: "emerald", lo: [14, 100, 64], hi: [64, 178, 118], spotDark: [4, 50, 30], spotLight: [140, 220, 170]),
+        WaterPreset(name: "glacier", lo: [70, 120, 140], hi: [160, 204, 214], spotDark: [40, 80, 100], spotLight: [215, 238, 244]),
+        WaterPreset(name: "tea", lo: [80, 62, 28], hi: [158, 128, 66], spotDark: [40, 28, 10], spotLight: [200, 175, 120]),
+        WaterPreset(name: "stone", lo: [60, 66, 64], hi: [128, 136, 130], spotDark: [30, 34, 32], spotLight: [180, 186, 180]),
+        WaterPreset(name: "midnight", lo: [14, 20, 52], hi: [40, 56, 112], spotDark: [4, 6, 22], spotLight: [80, 96, 160]),
     ]
 
     /// Overall brightness of the pond at a given depth (0 shallow … 1 deep).

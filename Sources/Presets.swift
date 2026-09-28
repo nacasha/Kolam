@@ -27,7 +27,7 @@ enum Presets {
         ]),
         Preset(name: "Sunny spring", values: [
             "weather": "clear", "timeOfDay": "morning", "season": "spring", "water": "jade", "depth": 40.0, "depthDarken": false,
-            "pondShape": "natural", "floorStyle": "original", "rainMode": "never",
+            "floorStyle": "original", "rainMode": "never",
         ]),
         Preset(name: "Rainy night", values: [
             "weather": "rain", "timeOfDay": "night", "rainMode": "always", "rainIntensity": 150.0, "water": "deep",
@@ -35,7 +35,7 @@ enum Presets {
         ]),
         Preset(name: "Autumn pond", values: [
             "weather": "windy", "timeOfDay": "afternoon", "season": "autumn", "water": "moss", "floorStyle": "stones",
-            "pondShape": "rounded", "fallingAmount": 160.0, "rainMode": "never",
+            "fallingAmount": 160.0, "rainMode": "never",
         ]),
         Preset(name: "Winter", values: [
             "weather": "cloudy", "timeOfDay": "day", "season": "winter", "water": "ink", "floorStyle": "slate", "padClusters": 2.0,
@@ -47,7 +47,7 @@ enum Presets {
             "vinesOn": false, "reedsOn": false, "fallingOn": false, "wobbleOn": false,
         ]),
         Preset(name: "Wild pond", values: [
-            "pondShape": "natural", "floorStyle": "moss", "koiCount": 14.0, "padClusters": 9.0,
+            "floorStyle": "moss", "koiCount": 14.0, "padClusters": 9.0,
             "minnowSchools": 6.0, "dragonflies": 4.0, "reedAmount": 180.0, "vinesOn": true,
         ]),
     ]

@@ -221,3 +221,36 @@ enum Floor {
         return (a + (b - a) * fx) + ((c + (d - c) * fx) - (a + (b - a) * fx)) * fy
     }
 }
+
+extension Floor {
+    /// A small coloured picture of a floor style in a water colour, for the settings window.
+    /// Mirrors the water shader's floor colouring (without the moving light).
+    static func preview(style: FloorStyle, water: WaterPreset, size: CGSize = CGSize(width: 150, height: 96)) -> CGImage? {
+        // Bake at 2× so the preview shows the same scale of detail as the pond at 50%.
+        guard let data = bake(size: CGSize(width: size.width * 2, height: size.height * 2), style: style).cgImage().dataProvider?.data,
+              let src = CFDataGetBytePtr(data) else { return nil }
+        let w = Int(size.width), h = Int(size.height)
+        var out = [UInt8](repeating: 255, count: w * h * 4)
+        let lo = water.lo / 255, hi = water.hi / 255, dark = water.spotDark / 255, light = water.spotLight / 255
+        let plain = style == .plain
+        for y in 0..<h {
+            for x in 0..<w {
+                let i = (y * w + x) * 4
+                let n = plain ? 0.5 : Float(src[i]) / 255
+                var c = lo + (hi - lo) * n
+                if !plain {
+                    c += (dark - c) * (Float(src[i + 1]) / 255)
+                    c += (light - c) * (Float(src[i + 2]) / 255)
+                }
+                c *= 0.85
+                out[i] = UInt8(max(0, min(1, c.x)) * 255)
+                out[i + 1] = UInt8(max(0, min(1, c.y)) * 255)
+                out[i + 2] = UInt8(max(0, min(1, c.z)) * 255)
+            }
+        }
+        guard let provider = CGDataProvider(data: Data(out) as CFData) else { return nil }
+        return CGImage(width: w, height: h, bitsPerComponent: 8, bitsPerPixel: 32, bytesPerRow: w * 4,
+                       space: CGColorSpaceCreateDeviceRGB(), bitmapInfo: CGBitmapInfo(rawValue: CGImageAlphaInfo.noneSkipLast.rawValue),
+                       provider: provider, decode: nil, shouldInterpolate: true, intent: .defaultIntent)
+    }
+}
