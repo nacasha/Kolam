@@ -5,7 +5,7 @@ import ServiceManagement
 import SwiftUI
 
 struct SettingsView: View {
-    enum Tab: String, CaseIterable { case pond = "Pond", sky = "Sky", life = "Life", general = "General" }
+    enum Tab: String, CaseIterable { case pond = "Pond", sky = "Sky", life = "Life", presets = "Presets", general = "General" }
     @State private var tab = Tab.pond
 
     // Pond
@@ -15,6 +15,14 @@ struct SettingsView: View {
     @AppStorage("padsOn") private var padsOn = true
     @AppStorage("padClusters") private var padClusters = 5.0
     @AppStorage("flowers") private var flowers = true
+    @AppStorage("pondShape") private var pondShape = "full"
+    @AppStorage("reedsOn") private var reedsOn = true
+    @AppStorage("reedAmount") private var reedAmount = 100.0
+    @AppStorage("cattails") private var cattails = true
+    @AppStorage("feedOn") private var feedOn = true
+    @AppStorage("turtle") private var turtle = true
+    @State private var userPresets = Presets.userNames
+    @State private var presetName = ""
     @AppStorage("depth") private var depth = 70.0
     @AppStorage("floorStyle") private var floorStyle = "original"
     @AppStorage("depthDarken") private var depthDarken = true
@@ -72,12 +80,13 @@ struct SettingsView: View {
                 case .pond: pond
                 case .sky: sky
                 case .life: life
+                case .presets: presets
                 case .general: general
                 }
             }
             .formStyle(.grouped)
         }
-        .frame(width: 420, height: 520)
+        .frame(width: 460, height: 560)
     }
 
     @ViewBuilder private var pond: some View {
@@ -98,6 +107,11 @@ struct SettingsView: View {
             }
         }
         Section {
+            Picker("Pond shape", selection: $pondShape) {
+                Text("Fill the screen").tag("full")
+                Text("Rounded, with a bank").tag("rounded")
+                Text("Natural, with a bank").tag("natural")
+            }
             Picker("Pond floor", selection: $floorStyle) {
                 Text("Original").tag("original")
                 Text("Sand").tag("sand")
@@ -132,7 +146,7 @@ struct SettingsView: View {
                 slider("Intensity", $wobbleIntensity, 10...250, step: 10, unit: "%")
                 slider("Wave size", $wobbleSize, 40...250, step: 10, unit: "%")
             }
-            Toggle("Clicks send real ripples", isOn: $splashOn)
+            Toggle("Realistic ripples (clicks, rain, splashes)", isOn: $splashOn)
             if splashOn { slider("Ripple strength", $splashStrength, 20...300, step: 10, unit: "%") }
         } footer: {
             Text("The floor, fish and shadows wobble as seen through moving water; lily pads and petals bob on it. Click ripples need Interactive on.")
@@ -154,6 +168,11 @@ struct SettingsView: View {
                 Toggle("Flowers", isOn: $flowers)
             }
             Toggle("Vines", isOn: $vinesOn)
+            Toggle("Reeds", isOn: $reedsOn)
+            if reedsOn {
+                slider("Amount", $reedAmount, 20...250, step: 10, unit: "%")
+                Toggle("Cattails", isOn: $cattails)
+            }
         }
     }
 
@@ -216,11 +235,56 @@ struct SettingsView: View {
             }
             slider("Dragonflies", $dragonflies, 0...6, step: 1)
             Toggle("Frog", isOn: $frog)
+            Toggle("Turtle", isOn: $turtle)
         }
         Section {
-            Toggle("Koi come to clicks", isOn: $clickLure)
+            Toggle("Clicks drop koi food", isOn: $feedOn)
+            if !feedOn { Toggle("Koi come to clicks", isOn: $clickLure) }
         } footer: {
             Text("Clicks reach the pond only while Interactive is on.").foregroundStyle(.secondary)
+        }
+    }
+
+    @ViewBuilder private var presets: some View {
+        Section {
+            ForEach(Presets.builtIn, id: \.name) { preset in
+                LabeledContent(preset.name) {
+                    Button("Apply") { Presets.apply(preset.values) }
+                }
+            }
+        } header: {
+            Text("Built-in")
+        } footer: {
+            Text("Applying a preset replaces all pond settings. Frame rate and Interactive stay as they are.")
+                .foregroundStyle(.secondary)
+        }
+        Section {
+            if userPresets.isEmpty {
+                Text("No saved presets yet.").foregroundStyle(.secondary)
+            }
+            ForEach(userPresets, id: \.self) { name in
+                LabeledContent(name) {
+                    HStack {
+                        Button("Apply") { Presets.applyUser(name) }
+                        Button(role: .destructive) {
+                            Presets.delete(name)
+                            userPresets = Presets.userNames
+                        } label: { Image(systemName: "trash") }
+                        .help("Delete")
+                    }
+                }
+            }
+            HStack {
+                TextField("Name", text: $presetName, prompt: Text("My pond"))
+                Button("Save current") {
+                    Presets.saveCurrent(as: presetName.trimmingCharacters(in: .whitespaces))
+                    presetName = ""
+                    userPresets = Presets.userNames
+                }
+                .disabled(presetName.trimmingCharacters(in: .whitespaces).isEmpty)
+            }
+        } header: {
+            Text("Saved")
         }
     }
 

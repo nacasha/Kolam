@@ -13,6 +13,11 @@ enum Wave {
     static var time: CGFloat = 0
     /// Scene unit (points per 1100th of the short screen side), for splash sizes.
     static var unit: CGFloat = 1
+    /// Keep the effect running even with nothing moving, so ripples starting or ending
+    /// never switch the underwater layer between two render paths (a visible pop).
+    static var keepEnabled = false
+    /// Largest splash strength in use, so the edge fade can stay a fixed size.
+    static var maxStrength: CGFloat = 0
 
     // MARK: Splashes
 
@@ -20,22 +25,33 @@ enum Wave {
         let center: CGPoint
         let start: CGFloat
         let strength: CGFloat
+        /// Size of the ring relative to a click's (speed, wavelength and width all scale).
+        let scale: CGFloat
+        /// How fast it dies down, per second.
+        let decay: CGFloat
+        let life: CGFloat
     }
 
     /// The shader has a fixed number of splash slots; the oldest is dropped first.
-    static let maxSplashes = 6
+    static let maxSplashes = 32
     private static var splashes: [Splash] = []
-    private static let splashLife: CGFloat = 4
-    /// Peak displacement of the strongest splash, used to keep edges from sampling outside.
-    private static var splashPeak: CGFloat { splashes.map(\.strength).max() ?? 0 }
 
     static var isActive: Bool { amplitude > 0 || !splashes.isEmpty }
 
     /// A ring wave starting at `point`; `strength` is its peak displacement in points.
-    static func splash(at point: CGPoint, strength: CGFloat) {
+    /// `scale` < 1 makes a smaller, quicker ring (raindrops use about 0.4).
+    static func splash(at point: CGPoint, strength: CGFloat, scale: CGFloat = 1) {
         guard strength > 0 else { return }
-        splashes.append(Splash(center: point, start: time, strength: strength))
-        if splashes.count > maxSplashes { splashes.removeFirst() }
+        let decay = 0.9 / max(0.3, scale)
+        let new = Splash(center: point, start: time, strength: strength, scale: scale,
+                         decay: decay, life: min(4, 3.6 / decay + 0.4))
+        guard splashes.count >= maxSplashes else { splashes.append(new); return }
+        // Full: replace the faintest ripple, but only if it's fainter than the new one;
+        // otherwise skip the new one. Never cut off a ripple that's still clearly visible.
+        func remaining(_ s: Splash) -> CGFloat { s.strength * exp(-(time - s.start) * s.decay) }
+        guard let k = splashes.indices.min(by: { remaining(splashes[$0]) < remaining(splashes[$1]) }),
+              remaining(splashes[k]) < strength * 0.15 else { return }
+        splashes[k] = new
     }
 
     // Ring shape: travels outward at `speed`, a short packet of `wavelength`, fading with age.
@@ -49,9 +65,11 @@ enum Wave {
             let age = time - s.start
             let dx = p.x - s.center.x, dy = p.y - s.center.y
             let d = max(0.001, hypot(dx, dy))
-            let x = d - age * speed
-            let envelope = exp(-(x * x) / (width * width)) * exp(-age * 0.9) * min(1, age * 8)
-            let w = sin(x / wavelength * 2 * .pi) * envelope * s.strength
+            let x = d - age * speed * s.scale
+            let wd = width * s.scale
+            guard abs(x) < wd * 3 else { continue }
+            let envelope = exp(-(x * x) / (wd * wd)) * exp(-age * s.decay) * min(1, age * 8)
+            let w = sin(x / (wavelength * s.scale) * 2 * .pi) * envelope * s.strength
             v.dx += dx / d * w
             v.dy += dy / d * w
         }
@@ -77,23 +95,39 @@ enum Wave {
     /// Advances the clock, drops finished splashes and feeds the refraction shader.
     static func update(time now: CGFloat, effect: SKEffectNode, size: CGSize) {
         time = now
-        splashes.removeAll { now - $0.start > splashLife }
-        effect.shouldEnableEffects = isActive
-        guard isActive, let shader = effect.shader else { return }
+        splashes.removeAll { now - $0.start > $0.life }
+        effect.shouldEnableEffects = isActive || keepEnabled
+        guard effect.shouldEnableEffects, let shader = effect.shader else { return }
         shader.uniformNamed("u_size")?.vectorFloat2Value = vector_float2(Float(size.width), Float(size.height))
+        // The effect's texture covers its content's frame, which can reach past the screen
+        // (fish crossing an edge), so map texture coordinates back to scene points explicitly.
+        let frame = effect.calculateAccumulatedFrame()
+        shader.uniformNamed("u_origin")?.vectorFloat2Value = vector_float2(Float(frame.minX), Float(frame.minY))
+        shader.uniformNamed("u_tex")?.vectorFloat2Value = vector_float2(Float(max(1, frame.width)), Float(max(1, frame.height)))
         shader.uniformNamed("u_amp")?.floatValue = Float(amplitude)
         shader.uniformNamed("u_length")?.floatValue = Float(length)
         shader.uniformNamed("u_wtime")?.floatValue = Float(now)
-        shader.uniformNamed("u_margin")?.floatValue = Float((amplitude * 1.5 + splashPeak) * 2 + 1)
+        // Fixed by the settings, not by which ripples are active, so the edge fade never jumps.
+        shader.uniformNamed("u_margin")?.floatValue = Float((amplitude * 1.5 + maxStrength) * 2 + 1)
         shader.uniformNamed("u_ring")?.vectorFloat3Value = vector_float3(Float(speed), Float(wavelength), Float(width))
+        // Two splashes per 4×4 matrix (Metal caps a shader at 31 uniform buffers):
+        // columns = [value, shape] of splash 2m, then [value, shape] of splash 2m + 1.
+        var columns = [vector_float4](repeating: .zero, count: maxSplashes * 2)
         for k in 0..<maxSplashes {
-            // x, y, age, strength (strength 0 = empty slot).
+            // value = x, y, age, strength (strength 0 = empty slot); shape = scale, decay.
             var value = vector_float4(0, 0, 0, 0)
+            var shape = vector_float4(1, 1, 0, 0)
             if k < splashes.count {
                 let s = splashes[k]
                 value = vector_float4(Float(s.center.x), Float(s.center.y), Float(now - s.start), Float(s.strength))
+                shape = vector_float4(Float(s.scale), Float(s.decay), 0, 0)
             }
-            shader.uniformNamed("u_splash\(k)")?.vectorFloat4Value = value
+            columns[k * 2] = value
+            columns[k * 2 + 1] = shape
+        }
+        for m in 0..<maxSplashes / 2 {
+            shader.uniformNamed("u_splashes\(m)")?.matrixFloat4x4Value =
+                matrix_float4x4(columns[m * 4], columns[m * 4 + 1], columns[m * 4 + 2], columns[m * 4 + 3])
         }
     }
 
@@ -103,22 +137,26 @@ enum Wave {
         // parameters and uniforms referenced from helper functions.
         let splashBlocks = (0..<maxSplashes).map { k in """
             {
-                vec4 s = u_splash\(k);
+                vec4 s = u_splashes\(k / 2)[\(k % 2 * 2)];
                 if (s.w > 0.0) {
+                    vec4 q = u_splashes\(k / 2)[\(k % 2 * 2 + 1)];
                     vec2 v = p - s.xy;
                     float dist = max(0.001, length(v));
-                    float x = dist - s.z * u_ring.x;
-                    float envelope = exp(-(x * x) / (u_ring.z * u_ring.z)) * exp(-s.z * 0.9) * min(1.0, s.z * 8.0);
-                    float phase = x / u_ring.y * 6.28318;
-                    d += v / dist * sin(phase) * envelope * s.w;
-                    // The ring's slope catches the light: bright on one flank, dark on the other.
-                    shade += cos(phase) * envelope * min(1.0, s.w / 8.0);
+                    float x = dist - s.z * u_ring.x * q.x;
+                    float wd = u_ring.z * q.x;
+                    if (abs(x) < wd * 3.0) {
+                        float envelope = exp(-(x * x) / (wd * wd)) * exp(-s.z * q.y) * min(1.0, s.z * 8.0);
+                        float phase = x / (u_ring.y * q.x) * 6.28318;
+                        d += v / dist * sin(phase) * envelope * s.w;
+                        // The ring's slope catches the light: bright on one flank, dark on the other.
+                        shade += cos(phase) * envelope * min(1.0, s.w / (8.0 * q.x));
+                    }
                 }
             }
         """ }.joined(separator: "\n")
         let s = SKShader(source: """
         void main() {
-            vec2 p = v_tex_coord * u_size;
+            vec2 p = u_origin + v_tex_coord * u_tex;
             float t = u_wtime;
             float l = u_length / 6.28318;
             vec2 d = vec2(sin(p.y / l + t * 0.35) + 0.5 * sin((p.x + p.y) / (l * 1.7) - t * 0.5),
@@ -129,20 +167,22 @@ enum Wave {
             // outside the pond (which would show black).
             vec2 edge = min(p, u_size - p);
             float fade = smoothstep(0.0, u_margin * 3.0, min(edge.x, edge.y));
-            vec2 uv = v_tex_coord + d * fade / u_size;
-            vec4 c = texture2D(u_texture, clamp(uv, 0.5 / u_size, 1.0 - 0.5 / u_size));
-            c.rgb += shade * 0.07 * fade * c.a;
+            vec2 uv = v_tex_coord + d * fade / u_tex;
+            vec4 c = texture2D(u_texture, clamp(uv, 0.5 / u_tex, 1.0 - 0.5 / u_tex));
+            c.rgb += clamp(shade, -1.5, 1.5) * 0.09 * fade * c.a;
             gl_FragColor = c;
         }
         """)
         s.uniforms = [
             SKUniform(name: "u_size", vectorFloat2: vector_float2(1, 1)),
+            SKUniform(name: "u_origin", vectorFloat2: vector_float2(0, 0)),
+            SKUniform(name: "u_tex", vectorFloat2: vector_float2(1, 1)),
             SKUniform(name: "u_amp", float: 0),
             SKUniform(name: "u_length", float: 90),
             SKUniform(name: "u_wtime", float: 0),
             SKUniform(name: "u_margin", float: 1),
             SKUniform(name: "u_ring", vectorFloat3: vector_float3(170, 30, 38)),
-        ] + (0..<maxSplashes).map { SKUniform(name: "u_splash\($0)", vectorFloat4: .zero) }
+        ] + (0..<maxSplashes / 2).map { SKUniform(name: "u_splashes\($0)", matrixFloat4x4: matrix_float4x4()) }
         return s
     }
 }

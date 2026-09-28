@@ -102,6 +102,15 @@ final class Koi {
 
     var head: CGPoint { spine[0] }
 
+    /// How close the mouth must get to eat something.
+    var reach: CGFloat { spacing * 2.2 }
+
+    /// Swim for food at `point`; renewed every frame while it lasts.
+    func chase(_ point: CGPoint) {
+        lure = point
+        lureUntil = time + 1.5
+    }
+
     /// Something landed on the water: swim over for a few seconds if it's close enough.
     func notice(_ point: CGPoint, reach: CGFloat) {
         guard hypot(point.x - head.x, point.y - head.y) < reach else { return }

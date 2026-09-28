@@ -13,6 +13,12 @@ final class PondScene: SKScene {
     /// texture never changes size when a fish crosses an edge (that shook the pond).
     private let underwaterClip = SKCropNode()
     private let underwaterMask = SKSpriteNode(color: .white, size: .zero)
+    /// Two invisible points far outside the screen. They pin the effect's frame (and so its
+    /// texture) to one fixed rect; otherwise it resized whenever a fish poked past an edge,
+    /// which shifted the whole distortion and misplaced ripples.
+    private let frameAnchors = [SKSpriteNode(color: .clear, size: CGSize(width: 1, height: 1)),
+                                SKSpriteNode(color: .clear, size: CGSize(width: 1, height: 1))]
+    private var anchorMargin: CGFloat { (400 * unit).rounded() }
     private let surfaceLayer = SKNode()
     private var koi: [Koi] = []
     private var pads: [LilyPad] = []
@@ -21,6 +27,11 @@ final class PondScene: SKScene {
     private var dragonflies: [Dragonfly] = []
     private var frog: Frog?
     private var vines: SKNode?
+    private let food = Food()
+    private var turtle: Turtle?
+    private var geometry: PondGeometry
+    private var bank: SKNode?
+    private var reeds: SKNode?
     private let atmosphere = Atmosphere()
     private var config = PondConfig.current
     private var elapsed: CGFloat = 0
@@ -29,6 +40,7 @@ final class PondScene: SKScene {
     private var unit: CGFloat { min(size.width, size.height) / 1100 }
 
     override init(size: CGSize) {
+        geometry = PondGeometry(shape: config.pondShape, size: size)
         super.init(size: size)
         scaleMode = .resizeFill
         backgroundColor = .black
@@ -40,6 +52,7 @@ final class PondScene: SKScene {
         underwaterMask.anchorPoint = .zero
         underwaterClip.maskNode = underwaterMask
         underwater.addChild(underwaterClip)
+        frameAnchors.forEach(underwater.addChild)
         underwaterClip.addChild(water)
         underwater.shader = Wave.makeRefraction()
         underwater.shouldRasterize = false
@@ -65,7 +78,9 @@ final class PondScene: SKScene {
         spawnMinnows()
         setDragonflyCount(config.dragonflies)
         setFrog(config.frog)
+        setTurtle(config.turtle)
         buildVines()
+        buildBank()
     }
 
     required init?(coder: NSCoder) { fatalError("not used") }
@@ -98,6 +113,20 @@ final class PondScene: SKScene {
         }
         setDragonflyCount(new.dragonflies)
         if new.frog != old.frog { setFrog(new.frog) }
+        let shadowsChanged = new.depth != old.depth || new.shadowStrength != old.shadowStrength
+            || new.shadowDistance != old.shadowDistance || new.lightAngle != old.lightAngle || new.shadowBlur != old.shadowBlur
+        if new.pondShape != old.pondShape {
+            geometry = PondGeometry(shape: new.pondShape, size: size)
+            food.clear()
+            spawnPads()
+            spawnMinnows()
+        }
+        if new.pondShape != old.pondShape || new.reedsOn != old.reedsOn || new.reedAmount != old.reedAmount
+            || new.cattails != old.cattails || shadowsChanged {
+            buildBank()
+        }
+        if new.turtle != old.turtle || new.water != old.water || new.depth != old.depth
+            || new.depthDarken != old.depthDarken { setTurtle(new.turtle) }
         if new.vinesOn != old.vinesOn || new.depth != old.depth || new.shadowStrength != old.shadowStrength
             || new.shadowDistance != old.shadowDistance || new.lightAngle != old.lightAngle { buildVines() }
     }
@@ -111,6 +140,11 @@ final class PondScene: SKScene {
         Wave.amplitude = c.wobbleOn ? 4 * unit * c.wobbleIntensity : 0
         Wave.length = 320 * unit * c.wobbleSize
         Wave.unit = unit
+        Ripple.unit = unit
+        Ripple.realistic = c.splashOn
+        Ripple.strength = c.splashStrength
+        Wave.maxStrength = c.splashOn ? 9 * unit * c.splashStrength * 1.3 : 0
+        Wave.keepEnabled = c.splashOn || c.wobbleOn
     }
 
     // MARK: Creatures
@@ -121,7 +155,8 @@ final class PondScene: SKScene {
         guard config.minnowsOn else { return }
         let color = SKColor(red: 0.62, green: 0.70, blue: 0.66, alpha: 1).blended(withFraction: 0.35, of: config.water.mid(depth: Depth.visual))!
         schools = (0..<config.minnowSchools).map { _ in
-            MinnowSchool(at: CGPoint(x: .random(in: 0...size.width), y: .random(in: 0...size.height)),
+            MinnowSchool(at: CGPoint(x: .random(in: geometry.swimRect.minX...geometry.swimRect.maxX),
+                                     y: .random(in: geometry.swimRect.minY...geometry.swimRect.maxY)),
                          count: .random(in: 7...12), unit: unit, color: color, parent: minnowLayer)
         }
     }
@@ -148,6 +183,28 @@ final class PondScene: SKScene {
         frog?.seat(on: pads)
     }
 
+    private func setTurtle(_ on: Bool) {
+        turtle?.remove()
+        turtle = nil
+        guard on else { return }
+        let r = geometry.swimRect
+        turtle = Turtle(at: CGPoint(x: .random(in: r.minX...r.maxX), y: .random(in: r.minY...r.maxY)), unit: unit,
+                        water: config.water.mid(depth: Depth.visual), underwater: underwaterClip, shadows: shadowLayer)
+    }
+
+    /// Bank (for shaped ponds) and reeds along the water's edge.
+    private func buildBank() {
+        bank?.removeFromParent()
+        reeds?.removeFromParent()
+        bank = Bank.build(geometry, unit: unit)
+        bank.map(addChild)
+        reeds = nil
+        guard config.reedsOn else { return }
+        let r = Reeds.build(geometry, unit: unit, amount: config.reedAmount, cattails: config.cattails)
+        addChild(r)
+        reeds = r
+    }
+
     private func buildVines() {
         vines?.removeFromParent()
         vines = nil
@@ -169,8 +226,8 @@ final class PondScene: SKScene {
             // Cycle through varieties so any count shows a good mix.
             let variety = KoiVariety.all[(koi.count + Int.random(in: 0..<KoiVariety.all.count)) % KoiVariety.all.count]
             let depth = CGFloat.random(in: 0...1)
-            let pos = CGPoint(x: .random(in: size.width * 0.15...size.width * 0.85),
-                              y: .random(in: size.height * 0.15...size.height * 0.85))
+            let r = geometry.swimRect.insetBy(dx: geometry.swimRect.width * 0.1, dy: geometry.swimRect.height * 0.1)
+            let pos = CGPoint(x: .random(in: r.minX...r.maxX), y: .random(in: r.minY...r.maxY))
             let fish = Koi(at: pos, scale: unit * config.koiSize * .random(in: 1.3...1.9), depth: depth,
                            variety: variety, water: config.water.mid(depth: Depth.visual))
             // Deeper fish sit lower in the stack so shallow ones swim over them.
@@ -189,7 +246,8 @@ final class PondScene: SKScene {
         pads = []
         guard config.padsOn else { return }
         for _ in 0..<config.padClusters {
-            let center = CGPoint(x: .random(in: 0...size.width), y: .random(in: 0...size.height))
+            let area = geometry.swimRect
+            let center = CGPoint(x: .random(in: area.minX...area.maxX), y: .random(in: area.minY...area.maxY))
             for _ in 0..<Int.random(in: 2...4) {
                 let pos = CGPoint(x: center.x + .random(in: -110...110) * unit,
                                   y: center.y + .random(in: -90...90) * unit)
@@ -205,11 +263,18 @@ final class PondScene: SKScene {
 
     // MARK: Interaction
 
+    func dropFood(at point: CGPoint) {
+        food.drop(at: point, unit: unit, surface: surfaceLayer, shadows: shadowLayer)
+    }
+
     override func mouseDown(with event: NSEvent) {
         let point = event.location(in: self)
+        // Clicks on the bank don't touch the water.
+        guard geometry.contains(point) else { return }
         Ripple.spawn(at: point, in: surfaceLayer, size: 240 * unit)
-        if config.splashOn {
-            Wave.splash(at: point, strength: 9 * unit * config.splashStrength)
+        if config.feedOn {
+            food.drop(at: point, unit: unit, surface: surfaceLayer, shadows: shadowLayer)
+            return
         }
         guard config.clickLure else { return }
         let reach = max(size.width, size.height) * 0.45
@@ -224,6 +289,8 @@ final class PondScene: SKScene {
 
     private func layoutWater() {
         underwaterMask.size = size
+        frameAnchors[0].position = CGPoint(x: -anchorMargin + 0.5, y: -anchorMargin + 0.5)
+        frameAnchors[1].position = CGPoint(x: size.width + anchorMargin - 0.5, y: size.height + anchorMargin - 0.5)
         water.size = size
         water.setValue(SKAttributeValue(vectorFloat2: vector_float2(Float(size.width), Float(size.height))),
                        forAttribute: "a_size")
@@ -235,7 +302,11 @@ final class PondScene: SKScene {
         lastTime = currentTime
         elapsed += dt
         Wave.update(time: elapsed, effect: underwater, size: size)
-        let bounds = CGRect(origin: .zero, size: size)
+        let screen = CGRect(origin: .zero, size: size)
+        let bounds = geometry.swimRect
+        food.update(dt: dt, koi: koi, unit: unit) { [unowned self] p in
+            Ripple.spawn(at: p, in: surfaceLayer, size: 70 * unit, rings: 2, strength: 0.5)
+        }
         let koiDt = dt * config.koiSpeed
         for fish in koi {
             fish.update(dt: koiDt, bounds: bounds, others: koi)
@@ -247,10 +318,11 @@ final class PondScene: SKScene {
             school.update(dt: dt, bounds: bounds, koi: koi, follow: config.minnowFollow)
         }
         for d in dragonflies {
-            d.update(dt: dt, bounds: bounds)
+            d.update(dt: dt, bounds: screen)
         }
         frog?.update(dt: dt, pads: pads, surface: surfaceLayer)
-        atmosphere.update(dt: dt, config: config, bounds: bounds, unit: unit, surface: surfaceLayer, shadows: shadowLayer)
+        turtle?.update(dt: dt, bounds: bounds, pads: pads, surface: surfaceLayer)
+        atmosphere.update(dt: dt, config: config, bounds: screen, pond: bounds, unit: unit, surface: surfaceLayer, shadows: shadowLayer)
     }
 }
 

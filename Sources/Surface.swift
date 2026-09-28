@@ -46,7 +46,10 @@ final class LilyPad {
     /// Current wave displacement, kept separate from the drift so bobbing never accumulates.
     private var bob = CGVector.zero
 
+    let radius: CGFloat
+
     init(at position: CGPoint, radius: CGFloat, flower: Bool) {
+        self.radius = radius
         let greens = [
             SKColor(red: 0.24, green: 0.45, blue: 0.20, alpha: 1),
             SKColor(red: 0.30, green: 0.52, blue: 0.24, alpha: 1),
@@ -139,8 +142,26 @@ extension Textures {
 }
 
 enum Ripple {
-    /// Expanding rings that fade out, then remove themselves.
-    static func spawn(at point: CGPoint, in parent: SKNode, size: CGFloat = 220, rings: Int = 3, strength: CGFloat = 0.5) {
+    /// Realistic: ripples are waves in the water (distortion). Otherwise drawn rings.
+    static var realistic = true
+    /// Multiplier from the Ripple strength setting.
+    static var strength: CGFloat = 1
+    static var unit: CGFloat = 1
+
+    /// A ring wave whose size matches a drawn ripple of `size` points.
+    private static func wave(at point: CGPoint, size: CGFloat, weight: CGFloat) {
+        let scale = size / (240 * unit)
+        Wave.splash(at: point, strength: 9 * unit * sqrt(scale) * weight * strength, scale: max(0.25, scale))
+    }
+
+    /// Expanding rings that fade out, then remove themselves. `realistic: false` always draws rings
+    /// (for tiny, frequent ones like landing petals).
+    static func spawn(at point: CGPoint, in parent: SKNode, size: CGFloat = 220, rings: Int = 3, strength: CGFloat = 0.5,
+                      realistic allowWave: Bool = true) {
+        if realistic && allowWave {
+            wave(at: point, size: size, weight: min(1, strength * 2))
+            return
+        }
         for k in 0..<rings {
             let scale = 1 - CGFloat(k) * 0.22
             ring(at: point, in: parent, size: size * scale, duration: 1.6 + Double(k) * 0.3,
@@ -150,6 +171,10 @@ enum Ripple {
 
     /// A raindrop: a tiny splash, then two or three rings that spread and slow down.
     static func drop(at point: CGPoint, in parent: SKNode, size: CGFloat) {
+        if realistic {
+            wave(at: point, size: size * 1.4, weight: 1.1)
+            return
+        }
         let splash = SKSpriteNode(texture: Textures.softCircle)
         splash.color = .white
         splash.colorBlendFactor = 1

@@ -75,6 +75,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private var windows: [WallpaperWindow] = []
     private var statusItem: NSStatusItem!
     private var asleep = false
+    private var settingsPending = false
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
@@ -96,7 +97,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         if ProcessInfo.processInfo.environment["PONDWALL_SPLASH"] != nil {
             DispatchQueue.main.asyncAfter(deadline: .now() + 5.2) {
                 let size = window.skView.bounds.size
-                Wave.splash(at: CGPoint(x: size.width / 2, y: size.height / 2), strength: 9 * Wave.unit * 2)
+                let p = CGPoint(x: size.width * 0.25, y: size.height * 0.25); Wave.splash(at: p, strength: 9 * Wave.unit * 2); (window.skView.scene as? PondScene)?.dropFood(at: p)
+            }
+        }
+        // PONDWALL_FEED=1 drops food in the middle a few seconds before the snapshot.
+        if ProcessInfo.processInfo.environment["PONDWALL_FEED"] != nil {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 3) {
+                let size = window.skView.bounds.size
+                (window.skView.scene as? PondScene)?.dropFood(at: CGPoint(x: size.width / 2, y: size.height / 2))
             }
         }
         DispatchQueue.main.asyncAfter(deadline: .now() + 6) {
@@ -114,8 +122,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         nc.addObserver(forName: NSApplication.didChangeScreenParametersNotification, object: nil, queue: .main) {
             [weak self] _ in self?.rebuildWindows()
         }
-        nc.addObserver(forName: UserDefaults.didChangeNotification, object: nil, queue: .main) {
-            [weak self] _ in self?.windows.forEach { $0.applySettings() }
+        // Coalesced: a preset writes dozens of keys, but the scene should rebuild once.
+        nc.addObserver(forName: UserDefaults.didChangeNotification, object: nil, queue: .main) { [weak self] _ in
+            guard let self, !self.settingsPending else { return }
+            self.settingsPending = true
+            DispatchQueue.main.async {
+                self.settingsPending = false
+                self.windows.forEach { $0.applySettings() }
+            }
         }
         nc.addObserver(forName: NSWindow.didChangeOcclusionStateNotification, object: nil, queue: .main) {
             [weak self] n in if n.object is WallpaperWindow { self?.updatePlayback() }

@@ -8,8 +8,7 @@ enum Settings {
     private static let d = UserDefaults.standard
 
     /// Must match the @AppStorage defaults in SettingsView.
-    static func registerDefaults() {
-        d.register(defaults: [
+    static let defaults: [String: Any] = [
             "water": "deep",
             "wavesOn": true,
             "waveIntensity": 100.0,
@@ -52,7 +51,16 @@ enum Settings {
             "wobbleSize": 100.0,
             "splashOn": true,
             "splashStrength": 100.0,
-        ])
+                "feedOn": true,
+            "turtle": true,
+            "pondShape": "full",
+            "reedsOn": true,
+            "reedAmount": 100.0,
+            "cattails": true,
+    ]
+
+    static func registerDefaults() {
+        d.register(defaults: defaults)
     }
 
     static var paused: Bool {
@@ -119,6 +127,12 @@ struct PondConfig: Equatable {
     var wobbleSize: CGFloat
     var splashOn: Bool
     var splashStrength: CGFloat
+    var feedOn: Bool
+    var turtle: Bool
+    var pondShape: PondShape
+    var reedsOn: Bool
+    var reedAmount: CGFloat
+    var cattails: Bool
 
     static var current: PondConfig {
         let d = UserDefaults.standard
@@ -163,7 +177,13 @@ struct PondConfig: Equatable {
             wobbleIntensity: CGFloat(d.double(forKey: "wobbleIntensity") / 100),
             wobbleSize: CGFloat(d.double(forKey: "wobbleSize") / 100),
             splashOn: d.bool(forKey: "splashOn"),
-            splashStrength: CGFloat(d.double(forKey: "splashStrength") / 100))
+            splashStrength: CGFloat(d.double(forKey: "splashStrength") / 100),
+            feedOn: d.bool(forKey: "feedOn"),
+            turtle: d.bool(forKey: "turtle"),
+            pondShape: PondShape(rawValue: d.string(forKey: "pondShape") ?? "") ?? .full,
+            reedsOn: d.bool(forKey: "reedsOn"),
+            reedAmount: CGFloat(d.double(forKey: "reedAmount") / 100),
+            cattails: d.bool(forKey: "cattails"))
     }
 }
 

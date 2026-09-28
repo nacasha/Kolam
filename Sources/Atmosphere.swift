@@ -212,7 +212,8 @@ final class Atmosphere {
     func weather(_ c: PondConfig) -> Weather { c.weather ?? Weather.allCases[weatherIndex] }
     func season(_ c: PondConfig) -> Season { c.season ?? Season.allCases[seasonIndex] }
 
-    func update(dt: CGFloat, config c: PondConfig, bounds: CGRect, unit u: CGFloat, surface: SKNode, shadows: SKNode) {
+    /// `pond` is where rain and falling items land (the water, not the bank).
+    func update(dt: CGFloat, config c: PondConfig, bounds: CGRect, pond: CGRect, unit u: CGFloat, surface: SKNode, shadows: SKNode) {
         weatherClock += dt
         if weatherClock > Self.weatherPeriod {
             weatherClock = 0
@@ -252,13 +253,15 @@ final class Atmosphere {
 
         let areaM = bounds.width * bounds.height / 1_000_000
         func randomPoint(_ inset: CGFloat = 0) -> CGPoint {
-            CGPoint(x: .random(in: bounds.minX - inset...bounds.maxX + inset),
-                    y: .random(in: bounds.minY - inset...bounds.maxY + inset))
+            CGPoint(x: .random(in: pond.minX - inset...pond.maxX + inset),
+                    y: .random(in: pond.minY - inset...pond.maxY + inset))
         }
 
         // Raindrops: small single-ring ripples.
         if rain > 0.02 {
-            rainDue += rain * shower * c.rainIntensity * 14 * areaM * dt
+            // Wave ripples are bigger and there are only so many slots, so fewer, heavier drops.
+            let perM: CGFloat = Ripple.realistic ? 3.5 : 14
+            rainDue += rain * shower * c.rainIntensity * perM * areaM * dt
             while rainDue >= 1 {
                 rainDue -= 1
                 Ripple.drop(at: randomPoint(), in: surface, size: .random(in: 50...110) * u * c.rainDropSize)
@@ -281,7 +284,7 @@ final class Atmosphere {
         let keep = bounds.insetBy(dx: -200 * u, dy: -200 * u)
         floaters.removeAll { f in
             if f.update(dt: dt, wind: wind), f.kind != .snow {
-                Ripple.spawn(at: f.node.position, in: surface, size: 34 * u, rings: 1, strength: 0.25)
+                Ripple.spawn(at: f.node.position, in: surface, size: 34 * u, rings: 1, strength: 0.25, realistic: false)
             }
             guard f.isDead || !keep.contains(f.node.position) else { return false }
             f.node.removeFromParent()
