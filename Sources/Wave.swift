@@ -76,6 +76,34 @@ enum Wave {
         return v
     }
 
+    /// Outward push from the ripples passing a point: the direction away from each ripple's
+    /// centre, weighted by how strongly its wave packet is there right now (no oscillation).
+    static func push(at p: CGPoint) -> CGVector {
+        var v = CGVector.zero
+        for s in splashes {
+            let age = time - s.start
+            let dx = p.x - s.center.x, dy = p.y - s.center.y
+            let d = max(0.001, hypot(dx, dy))
+            let x = d - age * speed * s.scale
+            let wd = width * s.scale
+            guard abs(x) < wd * 3 else { continue }
+            let envelope = exp(-(x * x) / (wd * wd)) * exp(-age * s.decay) * min(1, age * 8)
+            // Strongest near the centre of small, fresh ripples.
+            let w = envelope * s.strength * speed * s.scale / wavelength * 5
+            v.dx += dx / d * w
+            v.dy += dy / d * w
+        }
+        return v
+    }
+
+    /// Just the gentle swell, for bobbing.
+    static func swell(at p: CGPoint) -> CGVector {
+        guard amplitude > 0 else { return .zero }
+        let t = time, l = length / (2 * .pi)
+        return CGVector(dx: (sin(p.y / l + t * 0.35) + 0.5 * sin((p.x + p.y) / (l * 1.7) - t * 0.5)) * amplitude,
+                        dy: (cos(p.x / l - t * 0.3) + 0.5 * cos((p.x - p.y) / (l * 2.3) + t * 0.42)) * amplitude)
+    }
+
     /// Sideways displacement of the surface at a point.
     static func offset(at p: CGPoint) -> CGVector {
         var v = CGVector.zero
@@ -184,5 +212,38 @@ enum Wave {
             SKUniform(name: "u_ring", vectorFloat3: vector_float3(170, 30, 38)),
         ] + (0..<maxSplashes / 2).map { SKUniform(name: "u_splashes\($0)", matrixFloat4x4: matrix_float4x4()) }
         return s
+    }
+}
+
+/// How something floating moves on the water: ripples push it away and it keeps
+/// drifting until the water's drag slows it; the swell rocks it gently in place.
+struct Floating {
+    var velocity = CGVector.zero
+    var spin: CGFloat = 0
+    private var bob = CGVector.zero
+    /// 1 = a petal-sized thing; heavier things (big pads) move less.
+    var mass: CGFloat = 1
+
+    mutating func step(_ node: SKNode, dt: CGFloat) {
+        let push = Wave.push(at: node.position)
+        velocity.dx += push.dx / mass * dt
+        velocity.dy += push.dy / mass * dt
+        // A little spin from being shoved off-centre.
+        spin += (push.dx - push.dy) / mass * dt * 0.0006
+        let drag = exp(-dt * 0.9)
+        velocity.dx *= drag
+        velocity.dy *= drag
+        spin *= exp(-dt * 1.2)
+        node.position.x += velocity.dx * dt
+        node.position.y += velocity.dy * dt
+        node.zRotation += spin * dt
+
+        // Smoothed swell bob, applied as a change so it never accumulates.
+        let target = Wave.swell(at: node.position)
+        let k = min(1, dt * 3)
+        let next = CGVector(dx: bob.dx + (target.dx - bob.dx) * k, dy: bob.dy + (target.dy - bob.dy) * k)
+        node.position.x += (next.dx - bob.dx) * 0.6
+        node.position.y += (next.dy - bob.dy) * 0.6
+        bob = next
     }
 }

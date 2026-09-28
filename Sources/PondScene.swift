@@ -47,8 +47,9 @@ final class PondScene: SKScene {
         anchorPoint = .zero
 
         water.anchorPoint = .zero
-        water.shader = Shaders.makeWater(floor: Floor.bake(size: size, style: config.floorStyle))
+        water.shader = Shaders.makeWater(floor: Floor.bake(size: size, style: config.floorStyle, lowRes: config.lowMemory))
         water.zPosition = -10
+        shader = Style.make()
         underwaterMask.anchorPoint = .zero
         underwaterClip.maskNode = underwaterMask
         underwater.addChild(underwaterClip)
@@ -95,8 +96,8 @@ final class PondScene: SKScene {
 
         applyShadowAndWave(new)
         Shaders.applyWater(new)
-        if new.floorStyle != old.floorStyle {
-            water.shader = Shaders.makeWater(floor: Floor.bake(size: size, style: new.floorStyle))
+        if new.floorStyle != old.floorStyle || new.lowMemory != old.lowMemory {
+            water.shader = Shaders.makeWater(floor: Floor.bake(size: size, style: new.floorStyle, lowRes: new.lowMemory))
         }
         // Size and water colour are baked into each fish, so those rebuild the school.
         if new.koiSize != old.koiSize || new.water != old.water || new.depth != old.depth
@@ -145,6 +146,15 @@ final class PondScene: SKScene {
         Ripple.strength = c.splashStrength
         Wave.maxStrength = c.splashOn ? 9 * unit * c.splashStrength * 1.3 : 0
         Wave.keepEnabled = c.splashOn || c.wobbleOn
+        Koi.surfacingOn = c.surfacingOn
+        Koi.surfacingRate = c.surfacingRate
+        // Low memory: no full-screen distortion pass; ripples fall back to drawn rings.
+        if c.lowMemory {
+            Wave.amplitude = 0
+            Wave.maxStrength = 0
+            Wave.keepEnabled = false
+            Ripple.realistic = false
+        }
     }
 
     // MARK: Creatures
@@ -234,6 +244,9 @@ final class PondScene: SKScene {
             fish.node.zPosition = (1 - depth) * 900
             underwaterClip.addChild(fish.node)
             shadowLayer.addChild(fish.shadowNode)
+            fish.onGulp = { [unowned self] p in
+                Ripple.spawn(at: p, in: surfaceLayer, size: 55 * unit, rings: 2, strength: 0.4)
+            }
             koi.append(fish)
         }
     }
@@ -302,6 +315,7 @@ final class PondScene: SKScene {
         lastTime = currentTime
         elapsed += dt
         Wave.update(time: elapsed, effect: underwater, size: size)
+        Style.update(self, config: config)
         let screen = CGRect(origin: .zero, size: size)
         let bounds = geometry.swimRect
         food.update(dt: dt, koi: koi, unit: unit) { [unowned self] p in

@@ -97,10 +97,47 @@ final class Koi {
     /// Smoothed turn rate; bends the whole body toward the turn so it curves as one C.
     private var bend: CGFloat = 0
     private var time: CGFloat = 0
+    /// Surfacing: now and then rise to the top and gulp air.
+    static var surfacingOn = true
+    static var surfacingRate: CGFloat = 1
+    /// Called with the mouth position on each gulp.
+    var onGulp: ((CGPoint) -> Void)?
+    private var nextSurface = CGFloat.random(in: 15...70)
+    private var surfacing: CGFloat = 0
+    private var gulpsLeft = 0
+    private static let surfaceTime: CGFloat = 3.2
     private var lure: CGPoint?
     private var lureUntil: CGFloat = 0
 
     var head: CGPoint { spine[0] }
+
+    /// 0 = normal depth, 1 = at the surface; eases in and out over a surfacing.
+    private var surfaceLift: CGFloat {
+        guard surfacing > 0 else { return 0 }
+        let t = 1 - surfacing / Self.surfaceTime
+        return sin(t * .pi)
+    }
+
+    private func updateSurfacing(dt: CGFloat) {
+        if surfacing > 0 {
+            surfacing -= dt
+            // Gulps spread over the middle of the rise.
+            let t = 1 - surfacing / Self.surfaceTime
+            if gulpsLeft > 0, t > 0.3 + CGFloat(3 - gulpsLeft) * 0.18 {
+                gulpsLeft -= 1
+                let a = atan2(spine[0].y - spine[1].y, spine[0].x - spine[1].x)
+                onGulp?(CGPoint(x: spine[0].x + cos(a) * radii[0], y: spine[0].y + sin(a) * radii[0]))
+            }
+            return
+        }
+        guard Self.surfacingOn, lure == nil else { return }
+        nextSurface -= dt * Self.surfacingRate
+        if nextSurface <= 0 {
+            nextSurface = .random(in: 30...90)
+            surfacing = Self.surfaceTime
+            gulpsLeft = Int.random(in: 2...3)
+        }
+    }
 
     /// How close the mouth must get to eat something.
     var reach: CGFloat { spacing * 2.2 }
@@ -228,7 +265,9 @@ final class Koi {
         turn = max(-maxTurn, min(maxTurn, turn))
         heading += turn * dt
         bend += (max(-0.8, min(0.8, turn)) - bend) * min(1, dt * 3)
-        let speed = baseSpeed * boost * (0.75 + 0.35 * sin(time * 0.21 + seed * 0.5))
+        updateSurfacing(dt: dt)
+        let lift = surfaceLift
+        let speed = baseSpeed * boost * (1 - 0.55 * lift) * (0.75 + 0.35 * sin(time * 0.21 + seed * 0.5))
         swimPhase += dt * speed * 0.09
 
         // The head swings slightly side to side; the chain turns that into a wave down the body.
@@ -300,7 +339,8 @@ extension Koi {
         let n = spine.count
         let center = pose[n / 2]
         body.position = center
-        let o = Depth.offset(shadowOffset)
+        body.setScale(1 + 0.07 * surfaceLift)
+        let o = Depth.offset(CGVector(dx: shadowOffset.dx * (1 + 0.6 * surfaceLift), dy: shadowOffset.dy * (1 + 0.6 * surfaceLift)))
         shadow.position = CGPoint(x: center.x + o.dx, y: center.y + o.dy)
         shadow.alpha = 0.32 * Depth.shadowAlpha
         shadow.setScale(Depth.shadowSpread)

@@ -71,7 +71,7 @@ final class Floater {
     private let unit: CGFloat
     private var t: CGFloat = 0
     private var landed = false
-    private var bob = CGVector.zero
+    private var floating = Floating()
 
     var isDead: Bool { life <= 0 }
 
@@ -125,10 +125,7 @@ final class Floater {
             node.position.y += wind.dy * 0.4 * dt
             node.zRotation += spin * 0.15 * dt
             life -= dt
-            let wave = Wave.offset(at: node.position)
-            node.position.x += (wave.dx - bob.dx) * 0.6
-            node.position.y += (wave.dy - bob.dy) * 0.6
-            bob = wave
+            floating.step(node, dt: dt)
         }
 
         let fade = landed ? min(1, life / (kind == .snow ? fullLife : 3)) : min(1, (1 - height) * 4)

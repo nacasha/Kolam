@@ -69,9 +69,10 @@ enum FloorStyle: String, CaseIterable {
 enum Floor {
     /// Floor detail is soft under water, so half resolution is plenty.
     /// R = floor brightness, G = dark detail (pebbles, gaps), B = light detail.
-    static func bake(size: CGSize, style: FloorStyle) -> SKTexture {
-        let w = max(16, Int(size.width / 2)), h = max(16, Int(size.height / 2))
-        let q: CGFloat = 0.5   // texture pixels per point
+    /// `lowRes` bakes at a quarter of the points, for low memory mode.
+    static func bake(size: CGSize, style: FloorStyle, lowRes: Bool = false) -> SKTexture {
+        let q: CGFloat = lowRes ? 0.25 : 0.5   // texture pixels per point
+        let w = max(16, Int(size.width * q)), h = max(16, Int(size.height * q))
         let area = size.width * size.height
 
         let pebbleData: UnsafeMutablePointer<UInt8>?

@@ -43,13 +43,13 @@ final class LilyPad {
     private let drift: CGVector
     private let spin: CGFloat
     private let seed = CGFloat.random(in: 0...1000)
-    /// Current wave displacement, kept separate from the drift so bobbing never accumulates.
-    private var bob = CGVector.zero
+    private var floating = Floating()
 
     let radius: CGFloat
 
     init(at position: CGPoint, radius: CGFloat, flower: Bool) {
         self.radius = radius
+        floating.mass = max(1, radius / 45)
         let greens = [
             SKColor(red: 0.24, green: 0.45, blue: 0.20, alpha: 1),
             SKColor(red: 0.30, green: 0.52, blue: 0.24, alpha: 1),
@@ -112,10 +112,14 @@ final class LilyPad {
             if node.position.y < bounds.minY - m { node.position.y = bounds.maxY + m }
             if node.position.y > bounds.maxY + m { node.position.y = bounds.minY - m }
         }
-        let wave = Wave.offset(at: node.position)
-        node.position.x += (wave.dx - bob.dx) * 0.6
-        node.position.y += (wave.dy - bob.dy) * 0.6
-        bob = wave
+        floating.step(node, dt: dt)
+        // Pushed out of the water (shaped ponds): the bank bumps it back.
+        if bounds != .infinite, !bounds.insetBy(dx: -40, dy: -40).contains(node.position) {
+            let back = CGVector(dx: bounds.midX - node.position.x, dy: bounds.midY - node.position.y)
+            let len = max(1, hypot(back.dx, back.dy))
+            floating.velocity.dx += back.dx / len * 60 * dt
+            floating.velocity.dy += back.dy / len * 60 * dt
+        }
         let o = Depth.offset(CGVector(dx: 14, dy: -20))
         shadow.position = CGPoint(x: node.position.x + o.dx, y: node.position.y + o.dy)
         shadow.alpha = 0.35 * Depth.shadowAlpha

@@ -8,7 +8,7 @@ final class Food {
         let node: SKSpriteNode
         let shadow: SKSpriteNode
         var life: CGFloat = .random(in: 28...40)
-        var bob = CGVector.zero
+        var floating = Floating()
         let drift: CGVector
         weak var claimer: Koi?
 
@@ -75,10 +75,7 @@ final class Food {
             p.life -= dt
             p.node.position.x += p.drift.dx * dt
             p.node.position.y += p.drift.dy * dt
-            let wave = Wave.offset(at: p.node.position)
-            p.node.position.x += (wave.dx - p.bob.dx) * 0.6
-            p.node.position.y += (wave.dy - p.bob.dy) * 0.6
-            p.bob = wave
+            p.floating.step(p.node, dt: dt)
             if p.life < 3 { p.node.alpha = max(0, p.life / 3) }
             let o = Depth.offset(CGVector(dx: 6 * u, dy: -8 * u))
             p.shadow.position = CGPoint(x: p.node.position.x + o.dx, y: p.node.position.y + o.dy)

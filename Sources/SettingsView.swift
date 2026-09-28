@@ -21,6 +21,15 @@ struct SettingsView: View {
     @AppStorage("cattails") private var cattails = true
     @AppStorage("feedOn") private var feedOn = true
     @AppStorage("turtle") private var turtle = true
+    @AppStorage("lowMemory") private var lowMemory = false
+    @AppStorage("surfacingOn") private var surfacingOn = true
+    @AppStorage("surfacingRate") private var surfacingRate = 100.0
+    @AppStorage("artStyle") private var artStyle = "natural"
+    @AppStorage("pixelSize") private var pixelSize = 4.0
+    @AppStorage("tiltOn") private var tiltOn = false
+    @AppStorage("tiltStrength") private var tiltStrength = 100.0
+    @AppStorage("tiltFocus") private var tiltFocus = 50.0
+    @AppStorage("tiltBand") private var tiltBand = 15.0
     @State private var userPresets = Presets.userNames
     @State private var presetName = ""
     @AppStorage("depth") private var depth = 70.0
@@ -107,6 +116,25 @@ struct SettingsView: View {
             }
         }
         Section {
+            Picker("Art style", selection: $artStyle) {
+                Text("Natural").tag("natural")
+                Text("Painterly").tag("painterly")
+                Text("Ink wash").tag("ink")
+                Text("Pixel art").tag("pixel")
+            }
+            if artStyle == "pixel" { slider("Pixel size", $pixelSize, 2...12, step: 1, unit: " pt") }
+            Toggle("Tilt-shift focus", isOn: $tiltOn)
+            if tiltOn {
+                slider("Blur", $tiltStrength, 20...200, step: 10, unit: "%")
+                slider("Focus position", $tiltFocus, 10...90, step: 5, unit: "%")
+                slider("Focus band", $tiltBand, 0...40, step: 5, unit: "%")
+            }
+        } header: {
+            Text("Look")
+        } footer: {
+            Text("Art styles and tilt-shift add one full-screen pass (more GPU and memory).").foregroundStyle(.secondary)
+        }
+        Section {
             Picker("Pond shape", selection: $pondShape) {
                 Text("Fill the screen").tag("full")
                 Text("Rounded, with a bank").tag("rounded")
@@ -141,6 +169,10 @@ struct SettingsView: View {
             Text("Light from: 90° is the top, 180° the left, 0° the right.").foregroundStyle(.secondary)
         }
         Section {
+            if lowMemory {
+                Text("Water distortion and realistic ripples are off in Low memory mode (General tab).")
+                    .foregroundStyle(.secondary)
+            }
             Toggle("Water distortion", isOn: $wobbleOn)
             if wobbleOn {
                 slider("Intensity", $wobbleIntensity, 10...250, step: 10, unit: "%")
@@ -236,6 +268,8 @@ struct SettingsView: View {
             slider("Dragonflies", $dragonflies, 0...6, step: 1)
             Toggle("Frog", isOn: $frog)
             Toggle("Turtle", isOn: $turtle)
+            Toggle("Koi surface to gulp air", isOn: $surfacingOn)
+            if surfacingOn { slider("How often", $surfacingRate, 20...300, step: 10, unit: "%") }
         }
         Section {
             Toggle("Clicks drop koi food", isOn: $feedOn)
@@ -296,6 +330,10 @@ struct SettingsView: View {
                 Text("30 fps").tag(30)
             }
             Toggle("Show FPS", isOn: $showStats)
+            Toggle("Low memory mode", isOn: $lowMemory)
+        } footer: {
+            Text("Low memory skips the full-screen water distortion pass and draws the floor at lower resolution. Ripples become drawn rings.")
+                .foregroundStyle(.secondary)
         }
         Section {
             Toggle("Interactive", isOn: $interactive)

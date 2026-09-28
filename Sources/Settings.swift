@@ -57,6 +57,15 @@ enum Settings {
             "reedsOn": true,
             "reedAmount": 100.0,
             "cattails": true,
+            "lowMemory": false,
+            "surfacingOn": true,
+            "surfacingRate": 100.0,
+            "artStyle": "natural",
+            "pixelSize": 4.0,
+            "tiltOn": false,
+            "tiltStrength": 100.0,
+            "tiltFocus": 50.0,
+            "tiltBand": 15.0,
     ]
 
     static func registerDefaults() {
@@ -133,6 +142,15 @@ struct PondConfig: Equatable {
     var reedsOn: Bool
     var reedAmount: CGFloat
     var cattails: Bool
+    var lowMemory: Bool
+    var surfacingOn: Bool
+    var surfacingRate: CGFloat
+    var artStyle: ArtStyle
+    var pixelSize: CGFloat
+    var tiltOn: Bool
+    var tiltStrength: CGFloat
+    var tiltFocus: CGFloat
+    var tiltBand: CGFloat
 
     static var current: PondConfig {
         let d = UserDefaults.standard
@@ -183,7 +201,16 @@ struct PondConfig: Equatable {
             pondShape: PondShape(rawValue: d.string(forKey: "pondShape") ?? "") ?? .full,
             reedsOn: d.bool(forKey: "reedsOn"),
             reedAmount: CGFloat(d.double(forKey: "reedAmount") / 100),
-            cattails: d.bool(forKey: "cattails"))
+            cattails: d.bool(forKey: "cattails"),
+            lowMemory: d.bool(forKey: "lowMemory"),
+            surfacingOn: d.bool(forKey: "surfacingOn"),
+            surfacingRate: CGFloat(d.double(forKey: "surfacingRate") / 100),
+            artStyle: ArtStyle(rawValue: d.string(forKey: "artStyle") ?? "") ?? .natural,
+            pixelSize: CGFloat(d.double(forKey: "pixelSize")),
+            tiltOn: d.bool(forKey: "tiltOn"),
+            tiltStrength: CGFloat(d.double(forKey: "tiltStrength") / 100),
+            tiltFocus: CGFloat(d.double(forKey: "tiltFocus") / 100),
+            tiltBand: CGFloat(d.double(forKey: "tiltBand") / 100))
     }
 }
 
