@@ -139,7 +139,8 @@ final class PondScene: SKScene {
         Ripple.realistic = c.splashOn
         Ripple.strength = c.splashStrength
         Wave.maxStrength = c.splashOn ? 9 * unit * c.splashStrength * 1.3 : 0
-        Wave.keepEnabled = c.splashOn || c.wobbleOn
+        Wave.windRipples = c.windRipplesOn ? c.windRipples : 0
+        Wave.keepEnabled = c.splashOn || c.wobbleOn || c.windRipplesOn
         Koi.surfacingOn = c.surfacingOn
         Koi.surfacingRate = c.surfacingRate
         // Low memory: no full-screen distortion pass; ripples fall back to drawn rings.
@@ -147,6 +148,7 @@ final class PondScene: SKScene {
             Wave.amplitude = 0
             Wave.maxStrength = 0
             Wave.keepEnabled = false
+            Wave.windRipples = 0
             Ripple.realistic = false
         }
     }
@@ -326,6 +328,8 @@ final class PondScene: SKScene {
         frog?.update(dt: dt, pads: pads, surface: surfaceLayer)
         turtle?.update(dt: dt, bounds: bounds, pads: pads, surface: surfaceLayer)
         Floating.wind = atmosphere.wind
+        Wave.windAngle = atan2(atmosphere.wind.dy, atmosphere.wind.dx)
+        Wave.windStrength = atmosphere.windStrength
         // Plants sway faster in stronger wind.
         let sway = 0.6 + 0.5 * min(4, atmosphere.windStrength)
         reeds?.speed = sway

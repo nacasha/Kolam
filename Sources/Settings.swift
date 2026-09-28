@@ -26,6 +26,8 @@ enum Settings {
             "windAmount": 100.0,
             "lightning": true,
             "windAuto": true,
+            "windRipplesOn": true,
+            "windRipples": 100.0,
             "windDirection": 0.0,
             "season": "auto",
             "fallingOn": true,
@@ -123,6 +125,8 @@ struct PondConfig: Equatable {
     var lightning: Bool
     /// Direction the wind blows toward, in radians; nil = wanders on its own.
     var windDirection: CGFloat?
+    var windRipplesOn: Bool
+    var windRipples: CGFloat
     var season: Season?
     var fallingOn: Bool
     var fallingAmount: Double
@@ -187,6 +191,8 @@ struct PondConfig: Equatable {
             windAmount: CGFloat(d.double(forKey: "windAmount") / 100),
             lightning: d.bool(forKey: "lightning"),
             windDirection: d.bool(forKey: "windAuto") ? nil : CGFloat(d.double(forKey: "windDirection")) * .pi / 180,
+            windRipplesOn: d.bool(forKey: "windRipplesOn"),
+            windRipples: CGFloat(d.double(forKey: "windRipples") / 100),
             season: Season(rawValue: d.string(forKey: "season") ?? ""),
             fallingOn: d.bool(forKey: "fallingOn"),
             fallingAmount: d.double(forKey: "fallingAmount") / 100,

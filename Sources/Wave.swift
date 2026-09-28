@@ -16,6 +16,20 @@ enum Wave {
     /// Keep the effect running even with nothing moving, so ripples starting or ending
     /// never switch the underwater layer between two render paths (a visible pop).
     static var keepEnabled = false
+
+    // MARK: Wind ripples
+
+    /// Wind over the surface: direction it blows toward (radians) and strength (1 = breeze).
+    static var windAngle: CGFloat = 0
+    static var windStrength: CGFloat = 0
+    /// Setting multiplier; 0 = off.
+    static var windRipples: CGFloat = 0
+    /// Wind ripples drift with the wind; this is how far they've travelled (points).
+    private static var windTravel: CGFloat = 0
+    /// Direction the ripple pattern is laid out along. Smoothed hard: the pattern spans the
+    /// whole screen, so even a tiny turn swings far-away crests back and forth.
+    private static var rippleAngle: CGFloat?
+    private static var lastTime: CGFloat = 0
     /// Largest splash strength in use, so the edge fade can stay a fixed size.
     static var maxStrength: CGFloat = 0
 
@@ -124,6 +138,19 @@ enum Wave {
     static func update(time now: CGFloat, effect: SKEffectNode, size: CGSize) {
         time = now
         splashes.removeAll { now - $0.start > $0.life }
+        let step = max(0, min(0.1, now - lastTime))
+        lastTime = now
+        windTravel += step * (40 + 60 * min(4, windStrength)) * unit
+        if let a = rippleAngle {
+            // ~25 s time constant; big changes (a new fixed direction) still get there in a minute.
+            var diff = windAngle - a
+            while diff > .pi { diff -= 2 * .pi }
+            while diff < -.pi { diff += 2 * .pi }
+            rippleAngle = a + diff * min(1, step / 25) + (abs(diff) > 0.4 ? diff * min(1, step / 4) : 0)
+        } else {
+            rippleAngle = windAngle
+        }
+        let ra = rippleAngle ?? windAngle
         effect.shouldEnableEffects = isActive || keepEnabled
         guard effect.shouldEnableEffects, let shader = effect.shader else { return }
         shader.uniformNamed("u_size")?.vectorFloat2Value = vector_float2(Float(size.width), Float(size.height))
@@ -137,6 +164,11 @@ enum Wave {
         shader.uniformNamed("u_wtime")?.floatValue = Float(now)
         // Fixed by the settings, not by which ripples are active, so the edge fade never jumps.
         shader.uniformNamed("u_margin")?.floatValue = Float((amplitude * 1.5 + maxStrength) * 2 + 1)
+        // Wind ripples fade in above a light breeze and grow with the wind.
+        let windLevel = windRipples * max(0, min(3, windStrength) - 0.35) / 1.2
+        shader.uniformNamed("u_wind")?.vectorFloat4Value =
+            vector_float4(Float(cos(ra)), Float(sin(ra)), Float(windLevel), Float(windTravel))
+        shader.uniformNamed("u_unit")?.floatValue = Float(unit)
         shader.uniformNamed("u_ring")?.vectorFloat3Value = vector_float3(Float(speed), Float(wavelength), Float(width))
         // Two splashes per 4×4 matrix (Metal caps a shader at 31 uniform buffers):
         // columns = [value, shape] of splash 2m, then [value, shape] of splash 2m + 1.
@@ -183,6 +215,20 @@ enum Wave {
             }
         """ }.joined(separator: "\n")
         let s = SKShader(source: """
+        float whash(vec2 p) {
+            p = fract(p * vec2(123.34, 456.21));
+            p += dot(p, p + 45.32);
+            return fract(p.x * p.y);
+        }
+
+        float wnoise(vec2 p) {
+            vec2 i = floor(p);
+            vec2 f = fract(p);
+            f = f * f * (3.0 - 2.0 * f);
+            return mix(mix(whash(i), whash(i + vec2(1.0, 0.0)), f.x),
+                       mix(whash(i + vec2(0.0, 1.0)), whash(i + vec2(1.0, 1.0)), f.x), f.y);
+        }
+
         void main() {
             vec2 p = u_origin + v_tex_coord * u_tex;
             float t = u_wtime;
@@ -191,6 +237,40 @@ enum Wave {
                           cos(p.x / l - t * 0.3) + 0.5 * cos((p.x - p.y) / (l * 2.3) + t * 0.42)) * u_amp;
             float shade = 0.0;
         \(splashBlocks)
+            // Wind ripples (cat's-paws): patches of fine ripples that race downwind in gusts.
+            // Crests run across the wind; their slopes catch the sky as light and dark streaks.
+            if (u_wind.z > 0.001) {
+                vec2 w = u_wind.xy;
+                vec2 n = vec2(-w.y, w.x);
+                // Laid out around the screen centre, so any turn pivots there, not at a corner.
+                vec2 pc = p - u_size * 0.5;
+                float along = dot(pc, w) / u_unit;
+                float across = dot(pc, n) / u_unit;
+                float travel = u_wind.w / u_unit;
+                // Gust patches: big soft blobs, stretched along the wind, carried downwind.
+                vec2 g = vec2((along - travel) / 520.0, across / 300.0);
+                float gust = wnoise(g) * 0.65 + wnoise(g * 2.3 + 7.1) * 0.35;
+                gust = smoothstep(0.5, 0.85, gust) * u_wind.z;
+                if (gust > 0.001) {
+                    // Three ripple trains at different angles and lengths; where they cross,
+                    // crests break into an irregular chop instead of straight lines.
+                    float jit = (wnoise(vec2(across / 45.0, along / 70.0)) - 0.5) * 9.0;
+                    vec2 q = vec2(along, across);
+                    float ph1 = (dot(q, vec2(0.97, 0.24)) + jit) / 9.0 - u_wtime * 3.0;
+                    float ph2 = (dot(q, vec2(0.94, -0.34)) - jit * 0.7) / 6.5 - u_wtime * 3.7;
+                    float ph3 = (dot(q, vec2(0.99, 0.05)) + jit * 1.4) / 14.0 - u_wtime * 2.4;
+                    float slope = cos(ph1) * 0.45 + cos(ph2) * 0.35 + cos(ph3) * 0.3;
+                    // Sparkle: only the steepest bits of crest glint.
+                    float glint = pow(max(0.0, slope), 3.0);
+                    // Patchy strength inside the gust, so it never looks uniform.
+                    float patchy = smoothstep(0.25, 0.75, wnoise(vec2(along / 80.0, across / 55.0) + 3.7));
+                    float k = gust * (0.45 + 0.55 * patchy);
+                    d += w * (sin(ph1) * 0.5 + sin(ph2) * 0.35 + sin(ph3) * 0.4) * k * u_unit * 1.1;
+                    shade += (slope * 0.9 + glint * 1.8) * k * 1.3;
+                    // Roughened water reflects a little more sky.
+                    shade += k * 0.35;
+                }
+            }
             // Fade the distortion out near the screen edges so it never samples
             // outside the pond (which would show black).
             vec2 edge = min(p, u_size - p);
@@ -210,6 +290,8 @@ enum Wave {
             SKUniform(name: "u_wtime", float: 0),
             SKUniform(name: "u_margin", float: 1),
             SKUniform(name: "u_ring", vectorFloat3: vector_float3(170, 30, 38)),
+            SKUniform(name: "u_wind", vectorFloat4: .zero),
+            SKUniform(name: "u_unit", float: 1),
         ] + (0..<maxSplashes / 2).map { SKUniform(name: "u_splashes\($0)", matrixFloat4x4: matrix_float4x4()) }
         return s
     }

@@ -110,7 +110,7 @@ enum SettingsPage: String, CaseIterable, Identifiable {
         case .wildlife: return ["minnowsOn", "minnowSchools", "minnowFollow", "dragonflies", "frog", "turtle"]
         case .plants: return ["padsOn", "padClusters", "flowers", "reedsOn", "reedAmount", "cattails", "vinesOn"]
         case .time: return ["timeOfDay", "cycleMinutes", "fireflies"]
-        case .weather: return ["weather", "windAmount", "windAuto", "windDirection", "lightning", "rainMode", "rainIntensity", "rainDropSize", "rainVary", "rainDim"]
+        case .weather: return ["weather", "windAmount", "windAuto", "windDirection", "windRipplesOn", "windRipples", "lightning", "rainMode", "rainIntensity", "rainDropSize", "rainVary", "rainDim"]
         case .season: return ["season", "fallingOn", "fallingAmount"]
         case .interaction: return ["feedOn", "clickLure", "splashOn", "splashStrength"]
         case .performance: return ["fps", "lowMemory"]
@@ -594,6 +594,9 @@ struct WeatherPage: View {
     @AppStorage("windAmount") private var windAmount = 100.0
     @AppStorage("lightning") private var lightning = true
     @AppStorage("windAuto") private var windAuto = true
+    @AppStorage("windRipplesOn") private var windRipplesOn = true
+    @AppStorage("windRipples") private var windRipples = 100.0
+    @AppStorage("lowMemory") private var lowMemory = false
     @AppStorage("windDirection") private var windDirection = 0.0
 
     private var windTowards: String {
@@ -652,6 +655,13 @@ struct WeatherPage: View {
                     }
                 }
                 .padding(.vertical, 4)
+            }
+            ToggleRow(title: "Wind ripples", symbol: "water.waves",
+                      note: lowMemory ? "Off in Low memory mode." : "Gusts roughen the water in patches that race downwind.",
+                      isOn: $windRipplesOn)
+                .disabled(lowMemory)
+            if windRipplesOn && !lowMemory {
+                SliderRow(title: "Strength", value: $windRipples, range: 20...300, step: 10, defaultValue: def("windRipples"))
             }
             if ["auto", "storm"].contains(weather) {
                 ToggleRow(title: "Lightning in storms", symbol: "bolt.fill", isOn: $lightning)
