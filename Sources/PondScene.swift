@@ -7,6 +7,11 @@ import SpriteKit
 final class PondScene: SKScene {
     private let water = SKSpriteNode(color: .black, size: .zero)
     private let shadowLayer = SKNode()
+    /// Shadows of pads, dragonflies and the turtle each get their own layer so they can
+    /// fade in with their owners (the owners set each shadow's alpha every frame).
+    private let padShadows = SKNode()
+    private let dragonflyShadows = SKNode()
+    private let turtleShadows = SKNode()
     /// Everything under the surface, drawn through the wave refraction shader.
     private let underwater = SKEffectNode()
     /// Holds everything inside the effect node, scaled by the surface render scale; the
@@ -70,6 +75,7 @@ final class PondScene: SKScene {
 
         shadowLayer.zPosition = -5
         underwaterClip.addChild(shadowLayer)
+        [padShadows, dragonflyShadows, turtleShadows].forEach(shadowLayer.addChild)
 
         minnowLayer.zPosition = -2
         underwaterClip.addChild(minnowLayer)
@@ -93,6 +99,7 @@ final class PondScene: SKScene {
         setTurtle(config.turtle)
         buildVines()
         buildReeds()
+        playIntro()
     }
 
     required init?(coder: NSCoder) { fatalError("not used") }
@@ -186,7 +193,7 @@ final class PondScene: SKScene {
         while dragonflies.count < count {
             let d = Dragonfly(at: CGPoint(x: .random(in: 0...size.width), y: .random(in: 0...size.height)), unit: unit)
             addChild(d.node)
-            shadowLayer.addChild(d.shadow)
+            dragonflyShadows.addChild(d.shadow)
             dragonflies.append(d)
         }
     }
@@ -205,7 +212,7 @@ final class PondScene: SKScene {
         guard on else { return }
         let r = geometry.swimRect
         turtle = Turtle(at: CGPoint(x: .random(in: r.minX...r.maxX), y: .random(in: r.minY...r.maxY)), unit: unit,
-                        water: config.water.mid(depth: Depth.visual), underwater: underwaterClip, shadows: shadowLayer)
+                        water: config.water.mid(depth: Depth.visual), underwater: underwaterClip, shadows: turtleShadows)
     }
 
     /// Reeds along the edges of the pond.
@@ -269,12 +276,36 @@ final class PondScene: SKScene {
                                   y: center.y + .random(in: -90...90) * unit)
                 let flower = config.flowers && .random(in: 0...1) < 0.22
                 let pad = LilyPad(at: pos, radius: .random(in: 34...62) * unit, flower: flower)
-                shadowLayer.addChild(pad.shadow)
+                padShadows.addChild(pad.shadow)
                 surfaceLayer.addChild(pad.node)
                 pads.append(pad)
             }
         }
         frog?.seat(on: pads)
+    }
+
+    // MARK: Intro
+
+    /// Brings the pond in kind by kind at launch; see `Intro.Stage` for the order.
+    private func playIntro() {
+        typealias S = Intro.Stage
+        Intro.reveal(water, after: S.water, duration: 1.4)
+        Intro.cascade((reeds?.children ?? []) + (vines?.children ?? []), from: S.plants, spread: 0.9, grow: 0.85)
+        Intro.cascade(pads.map(\.node), from: S.pads, spread: 0.8, duration: 0.7, grow: 0.5)
+        Intro.reveal(padShadows, after: S.pads, duration: 1.5)
+        // Each fish and its shadow arrive together, one fish after another.
+        let step = koi.count > 1 ? min(1.6, 0.18 * TimeInterval(koi.count)) / TimeInterval(koi.count - 1) : 0
+        for (k, fish) in koi.shuffled().enumerated() {
+            let delay = S.koi + step * TimeInterval(k)
+            Intro.reveal(fish.node, after: delay, duration: 1.2, from: 0.9)
+            Intro.reveal(fish.shadowNode, after: delay, duration: 1.2)
+        }
+        Intro.reveal(minnowLayer, after: S.minnows, duration: 1.2)
+        if let frog { Intro.reveal(frog.node, after: S.frog, duration: 0.5, from: 0.4) }
+        if let turtle { Intro.reveal(turtle.node, after: S.turtle, duration: 1.2) }
+        Intro.reveal(turtleShadows, after: S.turtle, duration: 1.2)
+        Intro.cascade(dragonflies.map(\.node), from: S.dragonflies, spread: 0.8, duration: 0.6)
+        Intro.reveal(dragonflyShadows, after: S.dragonflies, duration: 1.4)
     }
 
     // MARK: Interaction

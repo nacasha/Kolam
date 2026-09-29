@@ -24,10 +24,11 @@ enum Wave {
     static var windStrength: CGFloat = 0
     /// Setting multiplier; 0 = off.
     static var windRipples: CGFloat = 0
-    /// Wind ripples drift with the wind; this is how far they've travelled (points).
-    private static var windTravel: CGFloat = 0
-    /// Direction the ripple pattern is laid out along. Smoothed hard: the pattern spans the
-    /// whole screen, so even a tiny turn swings far-away crests back and forth.
+    /// Wind ripples drift with the wind; this is how far they've been carried (points).
+    /// A translation, never a rotation, so a turning wind doesn't swing the pattern.
+    private static var windDrift = CGVector.zero
+    /// Smoothed wind direction. The shader keeps its ripple trains at fixed angles and
+    /// cross-fades between them by this, so the crests never rotate on screen.
     private static var rippleAngle: CGFloat?
     private static var lastTime: CGFloat = 0
     /// Largest splash strength in use, so the edge fade can stay a fixed size.
@@ -140,17 +141,19 @@ enum Wave {
         splashes.removeAll { now - $0.start > $0.life }
         let step = max(0, min(0.1, now - lastTime))
         lastTime = now
-        windTravel += step * (40 + 60 * min(4, windStrength)) * unit
         if let a = rippleAngle {
-            // ~25 s time constant; big changes (a new fixed direction) still get there in a minute.
+            // ~4 s time constant: turning only shifts the cross-fade, so it can follow closely.
             var diff = windAngle - a
             while diff > .pi { diff -= 2 * .pi }
             while diff < -.pi { diff += 2 * .pi }
-            rippleAngle = a + diff * min(1, step / 25) + (abs(diff) > 0.4 ? diff * min(1, step / 4) : 0)
+            rippleAngle = a + diff * min(1, step / 4)
         } else {
             rippleAngle = windAngle
         }
         let ra = rippleAngle ?? windAngle
+        let carry = step * (40 + 60 * min(4, windStrength)) * unit
+        windDrift.dx += cos(ra) * carry
+        windDrift.dy += sin(ra) * carry
         effect.shouldEnableEffects = isActive || keepEnabled
         guard effect.shouldEnableEffects, let shader = effect.shader else { return }
         shader.uniformNamed("u_size")?.vectorFloat2Value = vector_float2(Float(size.width), Float(size.height))
@@ -167,7 +170,7 @@ enum Wave {
         // Wind ripples fade in above a light breeze and grow with the wind.
         let windLevel = windRipples * max(0, min(3, windStrength) - 0.35) / 1.2
         shader.uniformNamed("u_wind")?.vectorFloat4Value =
-            vector_float4(Float(cos(ra)), Float(sin(ra)), Float(windLevel), Float(windTravel))
+            vector_float4(Float(windDrift.dx), Float(windDrift.dy), Float(windLevel), Float(ra))
         shader.uniformNamed("u_unit")?.floatValue = Float(unit)
         shader.uniformNamed("u_ring")?.vectorFloat3Value = vector_float3(Float(speed), Float(wavelength), Float(width))
         // Two splashes per 4×4 matrix (Metal caps a shader at 31 uniform buffers):
@@ -240,32 +243,44 @@ enum Wave {
             // Wind ripples (cat's-paws): patches of fine ripples that race downwind in gusts.
             // Crests run across the wind; their slopes catch the sky as light and dark streaks.
             if (u_wind.z > 0.001) {
-                vec2 w = u_wind.xy;
-                vec2 n = vec2(-w.y, w.x);
-                // Laid out around the screen centre, so any turn pivots there, not at a corner.
-                vec2 pc = p - u_size * 0.5;
-                float along = dot(pc, w) / u_unit;
-                float across = dot(pc, n) / u_unit;
-                float travel = u_wind.w / u_unit;
-                // Gust patches: big soft blobs, stretched along the wind, carried downwind.
-                vec2 g = vec2((along - travel) / 520.0, across / 300.0);
+                // Everything here is in fixed screen axes: a turning wind never rotates the
+                // pattern (that swung far-off crests around), it only shifts which trains show.
+                vec2 pu = p / u_unit;
+                // Gust patches: big soft blobs carried downwind.
+                vec2 g = (p - u_wind.xy) / u_unit / vec2(430.0, 380.0);
                 float gust = wnoise(g) * 0.65 + wnoise(g * 2.3 + 7.1) * 0.35;
                 gust = smoothstep(0.5, 0.85, gust) * u_wind.z;
                 if (gust > 0.001) {
-                    // Three ripple trains at different angles and lengths; where they cross,
-                    // crests break into an irregular chop instead of straight lines.
-                    float jit = (wnoise(vec2(across / 45.0, along / 70.0)) - 0.5) * 9.0;
-                    vec2 q = vec2(along, across);
-                    float ph1 = (dot(q, vec2(0.97, 0.24)) + jit) / 9.0 - u_wtime * 3.0;
-                    float ph2 = (dot(q, vec2(0.94, -0.34)) - jit * 0.7) / 6.5 - u_wtime * 3.7;
-                    float ph3 = (dot(q, vec2(0.99, 0.05)) + jit * 1.4) / 14.0 - u_wtime * 2.4;
-                    float slope = cos(ph1) * 0.45 + cos(ph2) * 0.35 + cos(ph3) * 0.3;
+                    float jit = (wnoise(pu / vec2(45.0, 70.0)) - 0.5) * 9.0;
+                    // Patchy strength inside the gust, so it never looks uniform.
+                    float patchy = smoothstep(0.25, 0.75, wnoise(pu / vec2(80.0, 55.0) + 3.7));
+                    float k = gust * (0.45 + 0.55 * patchy);
+                    // Eight ripple trains, 45° apart, weighted by how closely each runs with the wind.
+                    float total = 0.0;
+                    vec2 disp = vec2(0.0);
+                    float slope = 0.0;
+                    for (int i = 0; i < 8; i++) {
+                        float a = float(i) * 0.785398;
+                        float wt = pow(max(0.0, cos(a - u_wind.w)), 3.0);
+                        total += wt * wt;
+                        if (wt < 0.01) { continue; }
+                        vec2 w = vec2(cos(a), sin(a));
+                        vec2 q = vec2(dot(pu, w), dot(pu, vec2(-w.y, w.x)));
+                        // Three wavelets at slightly different angles and lengths; where they
+                        // cross, crests break into an irregular chop instead of straight lines.
+                        float ph1 = (dot(q, vec2(0.97, 0.24)) + jit) / 9.0 - u_wtime * 3.0;
+                        float ph2 = (dot(q, vec2(0.94, -0.34)) - jit * 0.7) / 6.5 - u_wtime * 3.7;
+                        float ph3 = (dot(q, vec2(0.99, 0.05)) + jit * 1.4) / 14.0 - u_wtime * 2.4;
+                        disp += w * (sin(ph1) * 0.5 + sin(ph2) * 0.35 + sin(ph3) * 0.4) * wt;
+                        slope += (cos(ph1) * 0.45 + cos(ph2) * 0.35 + cos(ph3) * 0.3) * wt;
+                    }
+                    // Trains add up out of step, so normalise by their combined (RMS) weight.
+                    total = sqrt(total);
+                    disp /= total;
+                    slope /= total;
                     // Sparkle: only the steepest bits of crest glint.
                     float glint = pow(max(0.0, slope), 3.0);
-                    // Patchy strength inside the gust, so it never looks uniform.
-                    float patchy = smoothstep(0.25, 0.75, wnoise(vec2(along / 80.0, across / 55.0) + 3.7));
-                    float k = gust * (0.45 + 0.55 * patchy);
-                    d += w * (sin(ph1) * 0.5 + sin(ph2) * 0.35 + sin(ph3) * 0.4) * k * u_unit * 1.1;
+                    d += disp * k * u_unit * 1.1;
                     shade += (slope * 0.9 + glint * 1.8) * k * 1.3;
                     // Roughened water reflects a little more sky.
                     shade += k * 0.35;
