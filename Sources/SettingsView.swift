@@ -58,7 +58,7 @@ enum SettingsPage: String, CaseIterable, Identifiable {
         case .season: return "What falls from above: petals, leaves or snow."
         case .interaction: return "What happens when you click the pond."
         case .performance: return "What each effect costs, and switches to trim memory and CPU."
-        case .general: return "Startup and diagnostics."
+        case .general: return "Startup, diagnostics and version."
         }
     }
 
@@ -134,7 +134,7 @@ enum SettingsPage: String, CaseIterable, Identifiable {
         case .season: return "spring summer autumn winter snow petals leaves falling"
         case .interaction: return "click food feed ripple splash interactive"
         case .performance: return "fps frame rate memory low quality detail cpu gpu distortion ripples pass"
-        case .general: return "login startup stats"
+        case .general: return "login startup stats about version build github"
         }
     }
 
@@ -920,6 +920,26 @@ struct GeneralPage: View {
             ToggleRow(title: "Show FPS", symbol: "chart.xyaxis.line", note: "Frame rate, node and draw counts in the corner.",
                       isOn: $showStats)
         }
+        Section("About") {
+            LabeledContent {
+                Text(Self.version).monospacedDigit().foregroundStyle(.secondary).textSelection(.enabled)
+            } label: {
+                RowLabel(title: "Version", symbol: "info.circle")
+            }
+            LabeledContent {
+                Link("github.com/nacasha/Pondwall", destination: URL(string: "https://github.com/nacasha/Pondwall")!)
+            } label: {
+                RowLabel(title: "Source code", symbol: "chevron.left.forwardslash.chevron.right")
+            }
+        }
+    }
+
+    /// "1.2.0 (14)" from Info.plist; the build number is left out when it adds nothing.
+    static var version: String {
+        let info = Bundle.main.infoDictionary ?? [:]
+        let short = info["CFBundleShortVersionString"] as? String ?? "dev"
+        guard let build = info["CFBundleVersion"] as? String, build != short else { return short }
+        return "\(short) (\(build))"
     }
 }
 

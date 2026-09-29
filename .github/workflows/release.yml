@@ -1,88 +1,70 @@
-name: Build macOS installer
+name: Release
 
+# Manual run from main: publishes the DMG from the last successful manual
+# "Build macOS installer" run on main, without rebuilding. Commits that build's
+# version to Info.plist on top of the commit it was built from, tags it, and
+# publishes it as the latest GitHub release.
 on:
-  push:
-    tags: ["v*"]
   workflow_dispatch:
 
 permissions:
   contents: write
+  actions: read
+
+concurrency:
+  group: release
+  cancel-in-progress: false
 
 jobs:
-  dmg:
-    runs-on: macos-15
-    timeout-minutes: 30
-    environment: release
-    env:
-      KEYCHAIN: build.keychain
+  publish:
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
     steps:
+      - name: Find the last build
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+        run: |
+          read -r RUN_ID SHA < <(gh run list -R "$REPO" --workflow build.yml --branch main \
+            --event workflow_dispatch --status success --limit 1 \
+            --json databaseId,headSha --jq '.[0] | "\(.databaseId) \(.headSha)"')
+          [ -n "$RUN_ID" ] || { echo "No successful manual build on main; run 'Build macOS installer' first"; exit 1; }
+          gh run download "$RUN_ID" -R "$REPO" --name version --dir "$RUNNER_TEMP/version"
+          gh run download "$RUN_ID" -R "$REPO" --name PondWall-dmg --dir dist
+          read -r VERSION BUILD < "$RUNNER_TEMP/version/version.txt"
+          echo "Releasing $VERSION (build $BUILD) from build run $RUN_ID at $SHA"
+          { echo "VERSION=$VERSION"; echo "BUILD=$BUILD"; echo "SHA=$SHA"; } >> "$GITHUB_ENV"
+
       - uses: actions/checkout@v4
-
-      - name: Set version from tag
-        if: startsWith(github.ref, 'refs/tags/v')
-        run: |
-          VERSION="${GITHUB_REF_NAME#v}"
-          plutil -replace CFBundleShortVersionString -string "$VERSION" Info.plist
-          plutil -replace CFBundleVersion -string "$GITHUB_RUN_NUMBER" Info.plist
-
-      - name: Import signing certificate
-        env:
-          MACOS_CERTIFICATE: ${{ secrets.MACOS_CERTIFICATE }}
-          MACOS_CERTIFICATE_PWD: ${{ secrets.MACOS_CERTIFICATE_PWD }}
-        run: |
-          KEYCHAIN_PWD="$(uuidgen)"
-          echo "$MACOS_CERTIFICATE" | base64 --decode > "$RUNNER_TEMP/cert.p12"
-          security create-keychain -p "$KEYCHAIN_PWD" "$KEYCHAIN"
-          security set-keychain-settings -lut 21600 "$KEYCHAIN"
-          security unlock-keychain -p "$KEYCHAIN_PWD" "$KEYCHAIN"
-          security import "$RUNNER_TEMP/cert.p12" -k "$KEYCHAIN" \
-            -P "$MACOS_CERTIFICATE_PWD" -T /usr/bin/codesign
-          security set-key-partition-list -S apple-tool:,apple: \
-            -s -k "$KEYCHAIN_PWD" "$KEYCHAIN" >/dev/null
-          security list-keychains -d user -s "$KEYCHAIN" $(security list-keychains -d user | tr -d '"')
-          rm "$RUNNER_TEMP/cert.p12"
-          IDENTITY="$(security find-identity -v -p codesigning "$KEYCHAIN" \
-            | grep -o '"Developer ID Application: .*"' | head -1 | tr -d '"')"
-          [ -n "$IDENTITY" ] || { echo "No Developer ID Application identity in certificate"; exit 1; }
-          echo "SIGN_IDENTITY=$IDENTITY" >> "$GITHUB_ENV"
-
-      - name: Build DMG
-        run: ./make-dmg.sh
-
-      - name: Notarize and staple
-        env:
-          APPLE_ID: ${{ secrets.APPLE_ID }}
-          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
-          APPLE_APP_PASSWORD: ${{ secrets.APPLE_APP_PASSWORD }}
-        run: |
-          xcrun notarytool submit dist/PondWall.dmg \
-            --apple-id "$APPLE_ID" --team-id "$APPLE_TEAM_ID" \
-            --password "$APPLE_APP_PASSWORD" --wait --timeout 20m \
-            --output-format json | tee "$RUNNER_TEMP/notary.json"
-          STATUS="$(plutil -extract status raw "$RUNNER_TEMP/notary.json")"
-          if [ "$STATUS" != "Accepted" ]; then
-            ID="$(plutil -extract id raw "$RUNNER_TEMP/notary.json")"
-            xcrun notarytool log "$ID" --apple-id "$APPLE_ID" \
-              --team-id "$APPLE_TEAM_ID" --password "$APPLE_APP_PASSWORD"
-            exit 1
-          fi
-          xcrun stapler staple dist/PondWall.dmg
-          spctl -a -t open --context context:primary-signature -vv dist/PondWall.dmg
-
-      - uses: actions/upload-artifact@v4
         with:
-          name: PondWall-dmg
-          path: dist/PondWall.dmg
+          ref: ${{ env.SHA }}
+          path: src
 
-      - name: Attach to GitHub release
-        if: startsWith(github.ref, 'refs/tags/v')
+      - name: Commit version and tag
+        working-directory: src
+        run: |
+          if git ls-remote --exit-code --tags origin "refs/tags/v$VERSION" >/dev/null; then
+            echo "v$VERSION is already released; run 'Build macOS installer' with a new version first"; exit 1
+          fi
+          python3 - <<'EOF'
+          import os, plistlib
+          with open("Info.plist", "rb") as f: info = plistlib.load(f)
+          info["CFBundleShortVersionString"] = os.environ["VERSION"]
+          info["CFBundleVersion"] = os.environ["BUILD"]
+          with open("Info.plist", "wb") as f: plistlib.dump(info, f, sort_keys=False)
+          EOF
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git commit -am "Release v$VERSION"
+          git tag "v$VERSION"
+          # Fails (before tagging the remote) if main moved on since the build;
+          # run the build again so the release matches main.
+          git push origin HEAD:main
+          git push origin "v$VERSION"
+
+      - name: Publish release
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          gh release create "$GITHUB_REF_NAME" dist/PondWall.dmg \
-            --title "PondWall $GITHUB_REF_NAME" --generate-notes \
-            || gh release upload "$GITHUB_REF_NAME" dist/PondWall.dmg --clobber
-
-      - name: Clean up keychain
-        if: always()
-        run: security delete-keychain "$KEYCHAIN" || true
+          gh release create "v$VERSION" dist/PondWall.dmg -R "${{ github.repository }}" \
+            --title "PondWall v$VERSION" --generate-notes --latest

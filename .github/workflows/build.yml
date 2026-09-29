@@ -1,0 +1,121 @@
+name: Build macOS installer
+run-name: Build (${{ inputs.bump == 'manual' && inputs.version || inputs.bump }})
+
+# Manual run: bumps the version (or takes one you type), builds, signs and
+# notarizes the DMG, and uploads it plus the version as artifacts.
+# release.yml publishes the last successful run on main as-is, no rebuild.
+on:
+  workflow_dispatch:
+    inputs:
+      bump:
+        description: Which part of the version to bump (manual = use the version below)
+        type: choice
+        options: [patch, minor, major, manual]
+        default: patch
+      version:
+        description: Version for "manual", e.g. 1.2.0
+        type: string
+        required: false
+
+permissions:
+  contents: read
+
+jobs:
+  dmg:
+    runs-on: macos-15
+    timeout-minutes: 30
+    environment: release
+    env:
+      KEYCHAIN: build.keychain
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set version
+        env:
+          BUMP: ${{ inputs.bump }}
+          MANUAL_VERSION: ${{ inputs.version }}
+        run: |
+          read -r VERSION BUILD < <(python3 - <<'EOF'
+          import os, plistlib, re, sys
+          info = plistlib.load(open("Info.plist", "rb"))
+          bump = os.environ["BUMP"]
+          if bump == "manual":
+              version = os.environ["MANUAL_VERSION"].strip().removeprefix("v")
+              if not re.fullmatch(r"\d+\.\d+\.\d+", version):
+                  sys.exit(f"Version must look like 1.2.0, got '{version}'")
+          else:
+              major, minor, patch = (int(x) for x in (info["CFBundleShortVersionString"].split(".") + ["0", "0"])[:3])
+              if bump == "major": major, minor, patch = major + 1, 0, 0
+              elif bump == "minor": minor, patch = minor + 1, 0
+              else: patch += 1
+              version = f"{major}.{minor}.{patch}"
+          print(version, int(info["CFBundleVersion"]) + 1)
+          EOF
+          )
+          [ -n "$VERSION" ] || exit 1
+          if git ls-remote --exit-code --tags origin "refs/tags/v$VERSION" >/dev/null; then
+            echo "v$VERSION is already released; pick another version"; exit 1
+          fi
+          plutil -replace CFBundleShortVersionString -string "$VERSION" Info.plist
+          plutil -replace CFBundleVersion -string "$BUILD" Info.plist
+          echo "Building $VERSION (build $BUILD)"
+          printf '%s %s\n' "$VERSION" "$BUILD" > "$RUNNER_TEMP/version.txt"
+
+      - name: Import signing certificate
+        env:
+          MACOS_CERTIFICATE: ${{ secrets.MACOS_CERTIFICATE }}
+          MACOS_CERTIFICATE_PWD: ${{ secrets.MACOS_CERTIFICATE_PWD }}
+        run: |
+          KEYCHAIN_PWD="$(uuidgen)"
+          echo "$MACOS_CERTIFICATE" | base64 --decode > "$RUNNER_TEMP/cert.p12"
+          security create-keychain -p "$KEYCHAIN_PWD" "$KEYCHAIN"
+          security set-keychain-settings -lut 21600 "$KEYCHAIN"
+          security unlock-keychain -p "$KEYCHAIN_PWD" "$KEYCHAIN"
+          security import "$RUNNER_TEMP/cert.p12" -k "$KEYCHAIN" \
+            -P "$MACOS_CERTIFICATE_PWD" -T /usr/bin/codesign
+          security set-key-partition-list -S apple-tool:,apple: \
+            -s -k "$KEYCHAIN_PWD" "$KEYCHAIN" >/dev/null
+          security list-keychains -d user -s "$KEYCHAIN" $(security list-keychains -d user | tr -d '"')
+          rm "$RUNNER_TEMP/cert.p12"
+          IDENTITY="$(security find-identity -v -p codesigning "$KEYCHAIN" \
+            | grep -o '"Developer ID Application: .*"' | head -1 | tr -d '"')"
+          [ -n "$IDENTITY" ] || { echo "No Developer ID Application identity in certificate"; exit 1; }
+          echo "SIGN_IDENTITY=$IDENTITY" >> "$GITHUB_ENV"
+
+      - name: Build DMG
+        run: ./make-dmg.sh
+
+      - name: Notarize and staple
+        env:
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          APPLE_APP_PASSWORD: ${{ secrets.APPLE_APP_PASSWORD }}
+        run: |
+          xcrun notarytool submit dist/PondWall.dmg \
+            --apple-id "$APPLE_ID" --team-id "$APPLE_TEAM_ID" \
+            --password "$APPLE_APP_PASSWORD" --wait --timeout 20m \
+            --output-format json | tee "$RUNNER_TEMP/notary.json"
+          STATUS="$(plutil -extract status raw "$RUNNER_TEMP/notary.json")"
+          if [ "$STATUS" != "Accepted" ]; then
+            ID="$(plutil -extract id raw "$RUNNER_TEMP/notary.json")"
+            xcrun notarytool log "$ID" --apple-id "$APPLE_ID" \
+              --team-id "$APPLE_TEAM_ID" --password "$APPLE_APP_PASSWORD"
+            exit 1
+          fi
+          xcrun stapler staple dist/PondWall.dmg
+          spctl -a -t open --context context:primary-signature -vv dist/PondWall.dmg
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: PondWall-dmg
+          path: dist/PondWall.dmg
+
+      # Read by release.yml: "<version> <build number>".
+      - uses: actions/upload-artifact@v4
+        with:
+          name: version
+          path: ${{ runner.temp }}/version.txt
+
+      - name: Clean up keychain
+        if: always()
+        run: security delete-keychain "$KEYCHAIN" || true
