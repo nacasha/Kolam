@@ -13,6 +13,11 @@
   &nbsp;·&nbsp; macOS 13 Ventura or later &nbsp;·&nbsp; Apple Silicon &amp; Intel
 </p>
 
+<p align="center">
+  <a href="docs/demo.mp4"><img src="docs/demo.webp" width="860" alt="PondWall running as the desktop wallpaper: koi swimming among lily pads"></a>
+  <br><sub>Click for the full-quality video.</sub>
+</p>
+
 ---
 
 ## Features
