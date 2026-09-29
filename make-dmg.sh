@@ -1,5 +1,5 @@
 #!/bin/bash
-# Build PondWall.app and package it into dist/PondWall.dmg with a styled
+# Build Kolam.app and package it into dist/Kolam.dmg with a styled
 # install window (background + drag-to-Applications layout).
 # The first run asks for permission to let the terminal control Finder.
 # Set SIGN_IDENTITY="Developer ID Application: …" to sign the app and DMG.
@@ -7,9 +7,9 @@
 set -euo pipefail
 
 SRC_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-VOL_NAME="PondWall"
+VOL_NAME="Kolam"
 DIST="$SRC_DIR/dist"
-DMG="$DIST/PondWall.dmg"
+DMG="$DIST/Kolam.dmg"
 WORK="$(mktemp -d)"
 STAGE="$WORK/stage"
 RW_DMG="$WORK/rw.dmg"
@@ -67,7 +67,7 @@ tell application "Finder"
     set icon size of opts to $ICON_SIZE
     set text size of opts to $TEXT_SIZE
     set background picture of opts to file ".background:background.tiff"
-    set position of item "PondWall.app" of container window to {$APP_X, $APP_Y}
+    set position of item "Kolam.app" of container window to {$APP_X, $APP_Y}
     set position of item "Applications" of container window to {$LINK_X, $LINK_Y}
     -- Hidden items only show when Finder shows hidden files; keep them inside
     -- the window so they never cause scrollbars.

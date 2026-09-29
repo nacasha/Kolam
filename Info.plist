@@ -2,14 +2,14 @@
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
-	<key>CFBundleIdentifier</key>
-	<string>com.nacasha.pondwall</string>
-	<key>CFBundleName</key>
-	<string>PondWall</string>
 	<key>CFBundleExecutable</key>
-	<string>PondWall</string>
+	<string>Kolam</string>
 	<key>CFBundleIconFile</key>
 	<string>AppIcon</string>
+	<key>CFBundleIdentifier</key>
+	<string>com.nacasha.kolam</string>
+	<key>CFBundleName</key>
+	<string>Kolam</string>
 	<key>CFBundlePackageType</key>
 	<string>APPL</string>
 	<key>CFBundleShortVersionString</key>

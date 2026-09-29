@@ -91,7 +91,7 @@ jobs:
           APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
           APPLE_APP_PASSWORD: ${{ secrets.APPLE_APP_PASSWORD }}
         run: |
-          xcrun notarytool submit dist/PondWall.dmg \
+          xcrun notarytool submit dist/Kolam.dmg \
             --apple-id "$APPLE_ID" --team-id "$APPLE_TEAM_ID" \
             --password "$APPLE_APP_PASSWORD" --wait --timeout 20m \
             --output-format json | tee "$RUNNER_TEMP/notary.json"
@@ -102,13 +102,13 @@ jobs:
               --team-id "$APPLE_TEAM_ID" --password "$APPLE_APP_PASSWORD"
             exit 1
           fi
-          xcrun stapler staple dist/PondWall.dmg
-          spctl -a -t open --context context:primary-signature -vv dist/PondWall.dmg
+          xcrun stapler staple dist/Kolam.dmg
+          spctl -a -t open --context context:primary-signature -vv dist/Kolam.dmg
 
       - uses: actions/upload-artifact@v4
         with:
-          name: PondWall-dmg
-          path: dist/PondWall.dmg
+          name: Kolam-dmg
+          path: dist/Kolam.dmg
 
       # Read by release.yml: "<version> <build number>".
       - uses: actions/upload-artifact@v4

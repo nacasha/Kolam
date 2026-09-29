@@ -30,7 +30,7 @@ jobs:
             --json databaseId,headSha --jq '.[0] | "\(.databaseId) \(.headSha)"')
           [ -n "$RUN_ID" ] || { echo "No successful manual build on main; run 'Build macOS installer' first"; exit 1; }
           gh run download "$RUN_ID" -R "$REPO" --name version --dir "$RUNNER_TEMP/version"
-          gh run download "$RUN_ID" -R "$REPO" --name PondWall-dmg --dir dist
+          gh run download "$RUN_ID" -R "$REPO" --name Kolam-dmg --dir dist
           read -r VERSION BUILD < "$RUNNER_TEMP/version/version.txt"
           echo "Releasing $VERSION (build $BUILD) from build run $RUN_ID at $SHA"
           { echo "VERSION=$VERSION"; echo "BUILD=$BUILD"; echo "SHA=$SHA"; } >> "$GITHUB_ENV"
@@ -66,5 +66,5 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          gh release create "v$VERSION" dist/PondWall.dmg -R "${{ github.repository }}" \
-            --title "PondWall v$VERSION" --generate-notes --latest
+          gh release create "v$VERSION" dist/Kolam.dmg -R "${{ github.repository }}" \
+            --title "Kolam v$VERSION" --generate-notes --latest

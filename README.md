@@ -1,20 +1,20 @@
 <p align="center">
-  <img src="docs/icon.png" width="128" height="128" alt="PondWall icon">
+  <img src="docs/icon.png" width="128" height="128" alt="Kolam icon">
 </p>
 
-<h1 align="center">PondWall</h1>
+<h1 align="center">Kolam</h1>
 
 <p align="center">
   A living koi pond as your macOS wallpaper.<br>
 </p>
 
 <p align="center">
-  <a href="https://github.com/nacasha/Pondwall/releases/latest"><b>Download for macOS</b></a>
+  <a href="https://github.com/nacasha/Kolam/releases/latest"><b>Download for macOS</b></a>
   &nbsp;·&nbsp; macOS 13 Ventura or later &nbsp;·&nbsp; Apple Silicon &amp; Intel
 </p>
 
 <p align="center">
-  <img src="docs/demo.webp" width="860" alt="PondWall running as the desktop wallpaper: koi swimming among lily pads">
+  <img src="docs/demo.webp" width="860" alt="Kolam running as the desktop wallpaper: koi swimming among lily pads">
 </p>
 
 ---
@@ -31,22 +31,22 @@
 
 ## Install
 
-1. Download `PondWall.dmg` from the [latest release](https://github.com/nacasha/Pondwall/releases/latest).
-2. Open it and drag **PondWall** into **Applications**.
-3. Launch PondWall. It lives in the menu bar and has no Dock icon.
+1. Download `Kolam.dmg` from the [latest release](https://github.com/nacasha/Kolam/releases/latest).
+2. Open it and drag **Kolam** into **Applications**.
+3. Launch Kolam. It lives in the menu bar and has no Dock icon.
 
 The app is signed and notarized by Apple, so it opens without Gatekeeper warnings.
 
 ## Usage
 
-Click the PondWall icon in the menu bar:
+Click the Kolam icon in the menu bar:
 
 | Menu item | What it does |
 | --- | --- |
 | **Pause / Resume** | Stop or restart the animation. |
 | **Settings… (⌘,)** | Tune the koi, creatures, plants, weather, water, style and performance, or apply a preset. |
 | **Interactive** | Lets the pond take clicks so you can feed the koi. Desktop icons are hidden while it's on. |
-| **Quit PondWall** | Quit. |
+| **Quit Kolam** | Quit. |
 
 Turn on **Start at login** in Settings to keep the pond running.
 
@@ -57,10 +57,10 @@ Requires the Xcode Command Line Tools (`xcode-select --install`).
 ```sh
 ./build.sh                 # build a universal app and install it to ~/Applications
 ARCHS=arm64 ./build.sh     # faster: build only for your Mac's chip
-./make-dmg.sh              # build the installer at dist/PondWall.dmg
+./make-dmg.sh              # build the installer at dist/Kolam.dmg
 ```
 
-`build.sh` takes an optional output folder, and restarts PondWall if it's running. To sign for distribution, set `SIGN_IDENTITY` to your Developer ID Application identity:
+`build.sh` takes an optional output folder, and restarts Kolam if it's running. To sign for distribution, set `SIGN_IDENTITY` to your Developer ID Application identity:
 
 ```sh
 SIGN_IDENTITY="Developer ID Application: Your Name (TEAMID)" ./make-dmg.sh

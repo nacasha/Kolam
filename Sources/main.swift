@@ -1,4 +1,4 @@
-// PondWall — a native koi pond wallpaper for macOS, drawn with SpriteKit.
+// Kolam — a native koi pond wallpaper for macOS, drawn with SpriteKit.
 //
 // One borderless desktop-level window per display, each hosting an SKView.
 // SpriteKit renders on Metal and syncs to the display's refresh rate.
@@ -58,9 +58,16 @@ final class WallpaperWindow: NSWindow {
         ignoresMouseEvents = !on
     }
 
-    /// PONDWALL_ALWAYS_RUN=1 ignores occlusion, for measuring cost while windows cover the desktop.
+    /// KOLAM_ALWAYS_RUN=1 ignores occlusion, for measuring cost while windows cover the desktop.
     var isVisibleOnScreen: Bool {
-        occlusionState.contains(.visible) || ProcessInfo.processInfo.environment["PONDWALL_ALWAYS_RUN"] != nil
+        occlusionState.contains(.visible) || ProcessInfo.processInfo.environment["KOLAM_ALWAYS_RUN"] != nil
+    }
+
+    /// The pond alone, rendered straight from SpriteKit: no desktop icons, windows or
+    /// menu bar, and no screen-recording permission needed.
+    func pondPNG() -> Data? {
+        guard let scene = skView.scene, let image = skView.texture(from: scene)?.cgImage() else { return nil }
+        return NSBitmapImageRep(cgImage: image).representation(using: .png, properties: [:])
     }
 
     func tearDown() {
@@ -79,7 +86,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
-        statusItem.button?.image = NSImage(systemSymbolName: "fish", accessibilityDescription: "PondWall")
+        statusItem.button?.image = NSImage(systemSymbolName: "fish", accessibilityDescription: "Kolam")
         let menu = NSMenu()
         menu.delegate = self
         statusItem.menu = menu
@@ -90,10 +97,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         scheduleSettingsSnapshot()
     }
 
-    /// PONDWALL_SETTINGS_SNAPSHOT=/dir opens the settings window, renders each page to
+    /// KOLAM_SETTINGS_SNAPSHOT=/dir opens the settings window, renders each page to
     /// <dir>/<page>.png and quits. Used for checking the layout without screen recording.
     private func scheduleSettingsSnapshot() {
-        guard let dir = ProcessInfo.processInfo.environment["PONDWALL_SETTINGS_SNAPSHOT"] else { return }
+        guard let dir = ProcessInfo.processInfo.environment["KOLAM_SETTINGS_SNAPSHOT"] else { return }
         SettingsWindow.shared.show()
         let pages = SettingsPage.allCases
         func shoot(_ k: Int) {
@@ -112,30 +119,26 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) { shoot(0) }
     }
 
-    /// PONDWALL_SNAPSHOT=/path.png renders the first display's scene to a PNG after a few
+    /// KOLAM_SNAPSHOT=/path.png renders the first display's scene to a PNG after a few
     /// seconds and quits. Used for checking the look without screen-recording permission.
     private func scheduleSnapshot() {
-        guard let path = ProcessInfo.processInfo.environment["PONDWALL_SNAPSHOT"], let window = windows.first else { return }
-        // PONDWALL_SPLASH=1 drops a test splash in the middle shortly before the snapshot.
-        if ProcessInfo.processInfo.environment["PONDWALL_SPLASH"] != nil {
+        guard let path = ProcessInfo.processInfo.environment["KOLAM_SNAPSHOT"], let window = windows.first else { return }
+        // KOLAM_SPLASH=1 drops a test splash in the middle shortly before the snapshot.
+        if ProcessInfo.processInfo.environment["KOLAM_SPLASH"] != nil {
             DispatchQueue.main.asyncAfter(deadline: .now() + 5.2) {
                 let size = window.skView.bounds.size
                 let p = CGPoint(x: size.width * 0.25, y: size.height * 0.25); Wave.splash(at: p, strength: 9 * Wave.unit * 2); (window.skView.scene as? PondScene)?.dropFood(at: p)
             }
         }
-        // PONDWALL_FEED=1 drops food in the middle a few seconds before the snapshot.
-        if ProcessInfo.processInfo.environment["PONDWALL_FEED"] != nil {
+        // KOLAM_FEED=1 drops food in the middle a few seconds before the snapshot.
+        if ProcessInfo.processInfo.environment["KOLAM_FEED"] != nil {
             DispatchQueue.main.asyncAfter(deadline: .now() + 3) {
                 let size = window.skView.bounds.size
                 (window.skView.scene as? PondScene)?.dropFood(at: CGPoint(x: size.width / 2, y: size.height / 2))
             }
         }
         DispatchQueue.main.asyncAfter(deadline: .now() + 6) {
-            if let scene = window.skView.scene,
-               let image = window.skView.texture(from: scene)?.cgImage(),
-               let data = NSBitmapImageRep(cgImage: image).representation(using: .png, properties: [:]) {
-                try? data.write(to: URL(fileURLWithPath: path))
-            }
+            try? window.pondPNG()?.write(to: URL(fileURLWithPath: path))
             NSApp.terminate(nil)
         }
     }
@@ -204,10 +207,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         let settings = item("Settings…", #selector(openSettings))
         settings.keyEquivalent = ","
         menu.addItem(settings)
+        menu.addItem(item("Take Screenshot", #selector(takeScreenshot)))
         menu.addItem(.separator())
         menu.addItem(item("Interactive (hides desktop icons)", #selector(toggleInteractive), on: Settings.interactive))
         menu.addItem(.separator())
-        menu.addItem(NSMenuItem(title: "Quit PondWall", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q"))
+        menu.addItem(NSMenuItem(title: "Quit Kolam", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q"))
     }
 
     private func item(_ title: String, _ action: Selector, on: Bool? = nil) -> NSMenuItem {
@@ -226,6 +230,38 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     @objc private func toggleInteractive() { Settings.interactive.toggle() }
 
     @objc private func openSettings() { SettingsWindow.shared.show() }
+
+    /// Saves each display's pond as a PNG where macOS saves screenshots (Desktop by
+    /// default), named like the system's: "Kolam 2026-09-29 at 08.59.12.png".
+    @objc private func takeScreenshot() {
+        let dir = Self.screenshotFolder()
+        let f = DateFormatter()
+        f.dateFormat = "yyyy-MM-dd 'at' HH.mm.ss"
+        let base = "Kolam \(f.string(from: Date()))"
+        var saved: [URL] = []
+        for (i, window) in windows.enumerated() {
+            guard let data = window.pondPNG() else { continue }
+            let name = windows.count > 1 ? "\(base) (\(i + 1)).png" : "\(base).png"
+            let url = dir.appendingPathComponent(name)
+            if (try? data.write(to: url)) != nil { saved.append(url) }
+        }
+        if saved.isEmpty {
+            NSSound.beep()
+        } else {
+            // The system's screenshot sound; not in /System/Library/Sounds, so load it by path.
+            let grab = "/System/Library/Components/CoreAudio.component/Contents/SharedSupport/SystemSounds/system/Grab.aif"
+            (NSSound(contentsOfFile: grab, byReference: true) ?? NSSound(named: "Tink"))?.play()
+        }
+    }
+
+    /// The folder set in the Screenshot app's Options, else the Desktop.
+    private static func screenshotFolder() -> URL {
+        let desktop = FileManager.default.urls(for: .desktopDirectory, in: .userDomainMask)[0]
+        guard let path = UserDefaults(suiteName: "com.apple.screencapture")?.string(forKey: "location") else { return desktop }
+        var isDir: ObjCBool = false
+        let url = URL(fileURLWithPath: (path as NSString).expandingTildeInPath)
+        return FileManager.default.fileExists(atPath: url.path, isDirectory: &isDir) && isDir.boolValue ? url : desktop
+    }
 }
 
 let app = NSApplication.shared

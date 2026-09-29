@@ -927,7 +927,7 @@ struct GeneralPage: View {
                 RowLabel(title: "Version", symbol: "info.circle")
             }
             LabeledContent {
-                Link("github.com/nacasha/Pondwall", destination: URL(string: "https://github.com/nacasha/Pondwall")!)
+                Link("github.com/nacasha/Kolam", destination: URL(string: "https://github.com/nacasha/Kolam")!)
             } label: {
                 RowLabel(title: "Source code", symbol: "chevron.left.forwardslash.chevron.right")
             }
@@ -952,12 +952,12 @@ final class SettingsWindow {
     func show() {
         if window == nil {
             let w = NSWindow(contentViewController: NSHostingController(rootView: SettingsView()))
-            w.title = "PondWall Settings"
+            w.title = "Kolam Settings"
             w.styleMask = [.titled, .closable, .miniaturizable, .resizable, .fullSizeContentView]
             w.toolbarStyle = .unified
             w.isReleasedWhenClosed = false
             w.setContentSize(NSSize(width: 860, height: 640))
-            w.setFrameAutosaveName("PondWallSettings")
+            w.setFrameAutosaveName("KolamSettings")
             w.center()
             window = w
         }
