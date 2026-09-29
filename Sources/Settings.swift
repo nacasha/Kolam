@@ -38,7 +38,12 @@ enum Settings {
             "season": "auto",
             "fallingOn": true,
             "fallingAmount": 100.0,
+            "iceOn": true,
+            "iceAmount": 100.0,
+            "debrisOn": true,
+            "debrisAmount": 100.0,
             "fireflies": true,
+            "fireflyAmount": 100.0,
             "driftOn": true,
             "driftIntensity": 100.0,
             "skyOn": true,
@@ -56,6 +61,7 @@ enum Settings {
             "rainDim": true,
             "floorStyle": "original",
             "depthDarken": true,
+            "floorDarkness": 70.0,
             "shadowStrength": 100.0,
             "shadowBlur": 100.0,
             "shadowDistance": 100.0,
@@ -76,6 +82,9 @@ enum Settings {
             "surfacingRate": 100.0,
             "artStyle": "natural",
             "pixelSize": 4.0,
+            "ditherPalette": "gameboy",
+            "halftoneSize": 8.0,
+            "mosaicSize": 22.0,
             "tiltOn": false,
             "tiltStrength": 100.0,
             "tiltFocus": 50.0,
@@ -151,7 +160,12 @@ struct PondConfig: Equatable {
     var season: Season?
     var fallingOn: Bool
     var fallingAmount: Double
+    var iceOn: Bool
+    var iceAmount: CGFloat
+    var debrisOn: Bool
+    var debrisAmount: CGFloat
     var fireflies: Bool
+    var fireflyAmount: CGFloat
     var driftOn: Bool
     var driftIntensity: Double
     var skyOn: Bool
@@ -169,6 +183,7 @@ struct PondConfig: Equatable {
     var rainDim: Bool
     var floorStyle: FloorStyle
     var depthDarken: Bool
+    var floorDarkness: CGFloat
     var shadowStrength: CGFloat
     var shadowBlur: CGFloat
     var shadowDistance: CGFloat
@@ -189,6 +204,9 @@ struct PondConfig: Equatable {
     var surfacingRate: CGFloat
     var artStyle: ArtStyle
     var pixelSize: CGFloat
+    var ditherPalette: DitherPalette
+    var halftoneSize: CGFloat
+    var mosaicSize: CGFloat
     var tiltOn: Bool
     var tiltStrength: CGFloat
     var tiltFocus: CGFloat
@@ -224,7 +242,12 @@ struct PondConfig: Equatable {
             season: Season(rawValue: d.string(forKey: "season") ?? ""),
             fallingOn: d.bool(forKey: "fallingOn"),
             fallingAmount: d.double(forKey: "fallingAmount") / 100,
+            iceOn: d.bool(forKey: "iceOn"),
+            iceAmount: CGFloat(d.double(forKey: "iceAmount") / 100),
+            debrisOn: d.bool(forKey: "debrisOn"),
+            debrisAmount: CGFloat(d.double(forKey: "debrisAmount") / 100),
             fireflies: d.bool(forKey: "fireflies"),
+            fireflyAmount: CGFloat(d.double(forKey: "fireflyAmount") / 100),
             driftOn: d.bool(forKey: "driftOn"),
             driftIntensity: d.double(forKey: "driftIntensity") / 100,
             skyOn: d.bool(forKey: "skyOn"),
@@ -242,6 +265,7 @@ struct PondConfig: Equatable {
             rainDim: d.bool(forKey: "rainDim"),
             floorStyle: FloorStyle(rawValue: d.string(forKey: "floorStyle") ?? "") ?? .original,
             depthDarken: d.bool(forKey: "depthDarken"),
+            floorDarkness: CGFloat(d.double(forKey: "floorDarkness") / 100),
             shadowStrength: CGFloat(d.double(forKey: "shadowStrength") / 100),
             shadowBlur: CGFloat(d.double(forKey: "shadowBlur") / 100),
             shadowDistance: CGFloat(d.double(forKey: "shadowDistance") / 100),
@@ -262,6 +286,9 @@ struct PondConfig: Equatable {
             surfacingRate: CGFloat(d.double(forKey: "surfacingRate") / 100),
             artStyle: ArtStyle(rawValue: d.string(forKey: "artStyle") ?? "") ?? .natural,
             pixelSize: CGFloat(d.double(forKey: "pixelSize")),
+            ditherPalette: DitherPalette(rawValue: d.string(forKey: "ditherPalette") ?? "") ?? .gameboy,
+            halftoneSize: CGFloat(d.double(forKey: "halftoneSize")),
+            mosaicSize: CGFloat(d.double(forKey: "mosaicSize")),
             tiltOn: d.bool(forKey: "tiltOn"),
             tiltStrength: CGFloat(d.double(forKey: "tiltStrength") / 100),
             tiltFocus: CGFloat(d.double(forKey: "tiltFocus") / 100),

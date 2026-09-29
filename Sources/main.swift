@@ -83,6 +83,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private var statusItem: NSStatusItem!
     private var asleep = false
     private var settingsPending = false
+    private var recorder: PondRecorder?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
@@ -91,10 +92,24 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         menu.delegate = self
         statusItem.menu = menu
 
+        CaptureNotifier.shared.setUp()
         observe()
         rebuildWindows()
         scheduleSnapshot()
         scheduleSettingsSnapshot()
+        scheduleRecordingTest()
+    }
+
+    /// KOLAM_RECORD=<seconds> records the first display, prints the file path and quits.
+    /// Used for checking video capture without clicking the menu.
+    private func scheduleRecordingTest() {
+        guard let value = ProcessInfo.processInfo.environment["KOLAM_RECORD"], let seconds = Double(value) else { return }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 2) { [self] in
+            startRecording(seconds: seconds) { url in
+                print(url?.path ?? "recording failed")
+                NSApp.terminate(nil)
+            }
+        }
     }
 
     /// KOLAM_SETTINGS_SNAPSHOT=/dir opens the settings window, renders each page to
@@ -187,9 +202,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private func updatePlayback() {
         let allowed = !Settings.paused && !asleep
         for window in windows {
-            window.skView.isPaused = !(allowed && window.isVisibleOnScreen)
+            // The display being recorded keeps running even while paused or covered.
+            let recording = recorder != nil && window === windows.first
+            window.skView.isPaused = !(recording || (allowed && window.isVisibleOnScreen))
         }
-        statusItem?.button?.appearsDisabled = Settings.paused
+        statusItem?.button?.appearsDisabled = Settings.paused && recorder == nil
     }
 
     // MARK: Menu
@@ -207,7 +224,22 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         let settings = item("Settings…", #selector(openSettings))
         settings.keyEquivalent = ","
         menu.addItem(settings)
+        menu.addItem(.separator())
         menu.addItem(item("Take Screenshot", #selector(takeScreenshot)))
+        if let recorder {
+            let left = Int(recorder.remaining.rounded(.up))
+            menu.addItem(item(String(format: "Stop Recording (%d:%02d left)", left / 60, left % 60), #selector(stopRecording)))
+        } else {
+            let record = NSMenuItem(title: "Record Video", action: nil, keyEquivalent: "")
+            let durations = NSMenu()
+            for (title, seconds) in [("15 seconds", 15), ("30 seconds", 30), ("45 seconds", 45), ("1 minute", 60)] {
+                let i = item(title, #selector(recordVideo(_:)))
+                i.tag = seconds
+                durations.addItem(i)
+            }
+            record.submenu = durations
+            menu.addItem(record)
+        }
         menu.addItem(.separator())
         menu.addItem(item("Interactive (hides desktop icons)", #selector(toggleInteractive), on: Settings.interactive))
         menu.addItem(.separator())
@@ -231,36 +263,40 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
     @objc private func openSettings() { SettingsWindow.shared.show() }
 
-    /// Saves each display's pond as a PNG where macOS saves screenshots (Desktop by
-    /// default), named like the system's: "Kolam 2026-09-29 at 08.59.12.png".
-    @objc private func takeScreenshot() {
-        let dir = Self.screenshotFolder()
-        let f = DateFormatter()
-        f.dateFormat = "yyyy-MM-dd 'at' HH.mm.ss"
-        let base = "Kolam \(f.string(from: Date()))"
-        var saved: [URL] = []
-        for (i, window) in windows.enumerated() {
-            guard let data = window.pondPNG() else { continue }
-            let name = windows.count > 1 ? "\(base) (\(i + 1)).png" : "\(base).png"
-            let url = dir.appendingPathComponent(name)
-            if (try? data.write(to: url)) != nil { saved.append(url) }
-        }
-        if saved.isEmpty {
-            NSSound.beep()
-        } else {
-            // The system's screenshot sound; not in /System/Library/Sounds, so load it by path.
-            let grab = "/System/Library/Components/CoreAudio.component/Contents/SharedSupport/SystemSounds/system/Grab.aif"
-            (NSSound(contentsOfFile: grab, byReference: true) ?? NSSound(named: "Tink"))?.play()
+    @objc private func takeScreenshot() { _ = Screenshot.take(windows) }
+
+    @objc private func recordVideo(_ sender: NSMenuItem) {
+        startRecording(seconds: TimeInterval(sender.tag)) { url in
+            if let url {
+                CaptureNotifier.shared.saved([url], kind: .video)
+            } else {
+                CaptureNotifier.shared.failed("The video couldn't be written to \((CaptureFolder.url.path as NSString).abbreviatingWithTildeInPath).")
+            }
         }
     }
 
-    /// The folder set in the Screenshot app's Options, else the Desktop.
-    private static func screenshotFolder() -> URL {
-        let desktop = FileManager.default.urls(for: .desktopDirectory, in: .userDomainMask)[0]
-        guard let path = UserDefaults(suiteName: "com.apple.screencapture")?.string(forKey: "location") else { return desktop }
-        var isDir: ObjCBool = false
-        let url = URL(fileURLWithPath: (path as NSString).expandingTildeInPath)
-        return FileManager.default.fileExists(atPath: url.path, isDirectory: &isDir) && isDir.boolValue ? url : desktop
+    @objc private func stopRecording() { recorder?.stop() }
+
+    /// Records the main display (the one with the menu bar).
+    private func startRecording(seconds: TimeInterval, done: @escaping (URL?) -> Void) {
+        guard recorder == nil, let window = windows.first,
+              let r = PondRecorder(view: window.skView, duration: seconds) else { done(nil); return }
+        recorder = r
+        r.onFinish = { [weak self] url in
+            self?.recorder = nil
+            self?.setRecordingIcon(false)
+            self?.updatePlayback()
+            done(url)
+        }
+        updatePlayback()
+        setRecordingIcon(true)
+        r.begin()
+    }
+
+    private func setRecordingIcon(_ on: Bool) {
+        statusItem?.button?.image = NSImage(systemSymbolName: on ? "record.circle" : "fish",
+                                            accessibilityDescription: on ? "Kolam — recording" : "Kolam")
+        statusItem?.button?.contentTintColor = on ? .systemRed : nil
     }
 }
 

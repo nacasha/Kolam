@@ -9,17 +9,16 @@
 import SpriteKit
 
 /// Pond depth, shared by everything that casts a shadow onto the floor.
-/// Pond depth, shared by everything that casts a shadow onto the floor.
 enum Depth {
     /// 0 = shallow, 1 = deep. Drives shadows.
     static var value: CGFloat = 0.7
-    /// Depth used for colour: equals `value` when deep water darkens, otherwise a fixed
-    /// shallow look so depth only moves shadows.
+    /// Depth used for colour: the floor darkness when darkening is on, otherwise a
+    /// fixed shallow look. Independent of `value`, which only moves shadows.
     static var visual: CGFloat = 0.7
 
-    static func set(_ depth: CGFloat, darken: Bool) {
+    static func set(_ depth: CGFloat, darken: Bool, darkness: CGFloat) {
         value = depth
-        visual = darken ? depth : 0.15
+        visual = darken ? darkness : 0.15
     }
 
     /// Shadow settings (1 = default).

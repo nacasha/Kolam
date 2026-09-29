@@ -55,10 +55,10 @@ enum SettingsPage: String, CaseIterable, Identifiable {
         case .plants: return "Lily pads, reeds, vines and the trees around the pond."
         case .time: return "Lighting through the day, from dawn to night."
         case .weather: return "Clouds, rain, storms and wind."
-        case .season: return "What falls from above: petals, leaves or snow."
+        case .season: return "What falls from above, and ice in winter."
         case .interaction: return "What happens when you click the pond."
         case .performance: return "What each effect costs, and switches to trim memory and CPU."
-        case .general: return "Startup, diagnostics and version."
+        case .general: return "Startup, capture folder, diagnostics and version."
         }
     }
 
@@ -102,20 +102,20 @@ enum SettingsPage: String, CaseIterable, Identifiable {
     var keys: [String] {
         switch self {
         case .presets: return []
-        case .look: return ["artStyle", "pixelSize", "tiltOn", "tiltStrength", "tiltFocus", "tiltBand"]
-        case .water: return ["water", "floorStyle", "depth", "depthDarken", "wavesOn", "waveIntensity",
+        case .look: return ["artStyle", "pixelSize", "ditherPalette", "halftoneSize", "mosaicSize", "tiltOn", "tiltStrength", "tiltFocus", "tiltBand"]
+        case .water: return ["water", "floorStyle", "depth", "depthDarken", "floorDarkness", "wavesOn", "waveIntensity", "debrisOn", "debrisAmount",
                              "causticsFlow", "driftOn", "driftIntensity", "skyOn", "wobbleOn", "wobbleIntensity", "wobbleSize"]
         case .light: return ["lightAngle", "shadowStrength", "shadowBlur", "shadowDistance"]
         case .koi: return ["koiCount", "koiSpeed", "koiSize", "surfacingOn", "surfacingRate", "koiMoods", "koiChase"]
         case .wildlife: return ["minnowsOn", "minnowSchools", "minnowFollow", "dragonflies", "frog", "turtle"]
         case .plants: return ["padsOn", "padClusters", "flowers", "reedsOn", "reedAmount", "cattails", "vinesOn",
                               "plantsLean", "treesOn", "treeSize"]
-        case .time: return ["timeOfDay", "cycleMinutes", "fireflies"]
+        case .time: return ["timeOfDay", "cycleMinutes", "fireflies", "fireflyAmount"]
         case .weather: return ["weather", "windAmount", "windAuto", "windDirection", "windRipplesOn", "windRipples", "lightning", "rainMode", "rainIntensity", "rainDropSize", "rainVary", "rainDim"]
-        case .season: return ["season", "fallingOn", "fallingAmount"]
+        case .season: return ["season", "fallingOn", "fallingAmount", "iceOn", "iceAmount"]
         case .interaction: return ["feedOn", "clickLure", "splashOn", "splashStrength"]
         case .performance: return ["fps", "floorLowRes", "surfaceScale"]
-        case .general: return ["showStats"]
+        case .general: return ["showStats", CaptureFolder.key]
         }
     }
 
@@ -123,18 +123,18 @@ enum SettingsPage: String, CaseIterable, Identifiable {
     var keywords: String {
         switch self {
         case .presets: return "save theme"
-        case .look: return "art painterly ink pixel tilt shift blur focus style"
-        case .water: return "colour color turquoise emerald glacier tea stone midnight floor stones sand gravel moss slate clay depth distortion wobble caustic light patterns reflection"
+        case .look: return "art painterly ink pixel watercolour watercolor woodblock ukiyo-e dither game boy halftone print dots mosaic stained glass tilt shift blur focus style"
+        case .water: return "colour color turquoise emerald glacier tea stone midnight floor stones sand gravel moss slate clay depth distortion wobble caustic light patterns reflection pollen bubbles debris"
         case .light: return "shadow blur distance strength direction angle sun"
         case .koi: return "fish count speed size surface gulp"
         case .wildlife: return "minnows small fish dragonfly frog turtle"
         case .plants: return "lily pads flowers reeds cattails vines trees reflections lean wind"
         case .time: return "day night dawn sunset dusk morning afternoon clock cycle fireflies"
         case .weather: return "rain storm thunder lightning wind windy cloudy clouds"
-        case .season: return "spring summer autumn winter snow petals leaves falling"
+        case .season: return "spring summer autumn winter snow petals leaves falling ice frozen freeze"
         case .interaction: return "click food feed ripple splash interactive"
         case .performance: return "fps frame rate memory low quality detail cpu gpu distortion ripples pass"
-        case .general: return "login startup stats about version build github"
+        case .general: return "login startup stats about version build github screenshot video record capture folder save"
         }
     }
 
@@ -322,6 +322,9 @@ struct PresetsPage: View {
 struct LookPage: View {
     @AppStorage("artStyle") private var artStyle = "natural"
     @AppStorage("pixelSize") private var pixelSize = 4.0
+    @AppStorage("ditherPalette") private var ditherPalette = "gameboy"
+    @AppStorage("halftoneSize") private var halftoneSize = 8.0
+    @AppStorage("mosaicSize") private var mosaicSize = 22.0
     @AppStorage("tiltOn") private var tiltOn = false
     @AppStorage("tiltStrength") private var tiltStrength = 100.0
     @AppStorage("tiltFocus") private var tiltFocus = 50.0
@@ -334,10 +337,30 @@ struct LookPage: View {
                 Choice(tag: "painterly", title: "Painterly", symbol: "paintbrush.pointed.fill"),
                 Choice(tag: "ink", title: "Ink wash", symbol: "scribble.variable"),
                 Choice(tag: "pixel", title: "Pixel art", symbol: "square.grid.3x3.fill"),
+                Choice(tag: "watercolor", title: "Watercolour", symbol: "drop.halffull"),
+                Choice(tag: "woodblock", title: "Woodblock", symbol: "mountain.2.fill"),
+                Choice(tag: "dither", title: "Dither", symbol: "checkerboard.rectangle"),
+                Choice(tag: "halftone", title: "Halftone", symbol: "circle.grid.3x3.fill"),
+                Choice(tag: "mosaic", title: "Mosaic", symbol: "rectangle.split.3x3.fill"),
             ], selection: $artStyle)
-            if artStyle == "pixel" {
+            if artStyle == "pixel" || artStyle == "dither" {
                 SliderRow(title: "Pixel size", symbol: "square.grid.2x2", value: $pixelSize, range: 2...12, unit: " pt",
                           defaultValue: def("pixelSize"))
+            }
+            if artStyle == "dither" {
+                Picker("Palette", selection: $ditherPalette) {
+                    Text("Game Boy").tag("gameboy")
+                    Text("Black & white").tag("mono")
+                    Text("Sepia").tag("sepia")
+                }
+            }
+            if artStyle == "halftone" {
+                SliderRow(title: "Dot size", symbol: "circle.grid.2x2", value: $halftoneSize, range: 4...20, unit: " pt",
+                          defaultValue: def("halftoneSize"))
+            }
+            if artStyle == "mosaic" {
+                SliderRow(title: "Tile size", symbol: "square.grid.2x2", value: $mosaicSize, range: 10...60, step: 2, unit: " pt",
+                          defaultValue: def("mosaicSize"))
             }
         }
         Section {
@@ -366,6 +389,7 @@ struct WaterPage: View {
     @AppStorage("floorStyle") private var floorStyle = "original"
     @AppStorage("depth") private var depth = 70.0
     @AppStorage("depthDarken") private var depthDarken = true
+    @AppStorage("floorDarkness") private var floorDarkness = 70.0
     @AppStorage("wavesOn") private var wavesOn = true
     @AppStorage("causticsFlow") private var causticsFlow = true
     @AppStorage("waveIntensity") private var waveIntensity = 100.0
@@ -375,6 +399,8 @@ struct WaterPage: View {
     @AppStorage("wobbleOn") private var wobbleOn = true
     @AppStorage("wobbleIntensity") private var wobbleIntensity = 60.0
     @AppStorage("wobbleSize") private var wobbleSize = 100.0
+    @AppStorage("debrisOn") private var debrisOn = true
+    @AppStorage("debrisAmount") private var debrisAmount = 100.0
 
     var body: some View {
         Section("Colour") {
@@ -383,10 +409,13 @@ struct WaterPage: View {
         Section("Pond floor") {
             FloorPicker(selection: $floorStyle, water: water)
             SliderRow(title: "Depth", symbol: "arrow.down.to.line", value: $depth, range: 0...100, step: 5, defaultValue: def("depth"))
-            ToggleRow(title: "Darken deep water", symbol: "moon.haze",
-                      note: depthDarken ? "Deeper water hides the floor and gets darker."
-                                        : "Depth only moves shadows; the pond keeps its brightness.",
+            ToggleRow(title: "Darken pond floor", symbol: "moon.haze",
+                      note: depthDarken ? "Murkier water hides the floor and gets darker."
+                                        : "The pond keeps its brightness.",
                       isOn: $depthDarken)
+            if depthDarken {
+                SliderRow(title: "Darkness", value: $floorDarkness, range: 0...100, step: 5, defaultValue: def("floorDarkness"))
+            }
         }
         Section("Surface") {
             ToggleRow(title: "Light patterns", symbol: "sparkles", note: "Bright caustic lines on the floor.", isOn: $wavesOn)
@@ -400,6 +429,11 @@ struct WaterPage: View {
                 SliderRow(title: "Intensity", value: $driftIntensity, range: 10...200, step: 10, defaultValue: def("driftIntensity"))
             }
             ToggleRow(title: "Sky reflections", symbol: "cloud", isOn: $skyOn)
+            ToggleRow(title: "Pollen and bubbles", symbol: "circle.dotted",
+                      note: "Specks drift with the wind; bubbles rise and pop.", isOn: $debrisOn)
+            if debrisOn {
+                SliderRow(title: "Amount", value: $debrisAmount, range: 20...200, step: 10, defaultValue: def("debrisAmount"))
+            }
         }
         Section {
             ToggleRow(title: "Water distortion", symbol: "water.waves",
@@ -564,6 +598,7 @@ struct TimePage: View {
     @AppStorage("timeOfDay") private var timeOfDay = "clock"
     @AppStorage("cycleMinutes") private var cycleMinutes = 20.0
     @AppStorage("fireflies") private var fireflies = true
+    @AppStorage("fireflyAmount") private var fireflyAmount = 100.0
 
     private var mode: String { timeOfDay == "clock" || timeOfDay == "cycle" ? timeOfDay : "fixed" }
 
@@ -603,6 +638,9 @@ struct TimePage: View {
         }
         Section("Night") {
             ToggleRow(title: "Fireflies", symbol: "sparkle", note: "From dusk until dawn, except in heavy rain.", isOn: $fireflies)
+            if fireflies {
+                SliderRow(title: "Amount", value: $fireflyAmount, range: 20...400, step: 10, defaultValue: def("fireflyAmount"))
+            }
         }
     }
 }
@@ -713,6 +751,8 @@ struct SeasonPage: View {
     @AppStorage("season") private var season = "auto"
     @AppStorage("fallingOn") private var fallingOn = true
     @AppStorage("fallingAmount") private var fallingAmount = 100.0
+    @AppStorage("iceOn") private var iceOn = true
+    @AppStorage("iceAmount") private var iceAmount = 100.0
 
     private var falling: String {
         switch season {
@@ -741,6 +781,13 @@ struct SeasonPage: View {
             ToggleRow(title: falling, symbol: "arrow.down.circle", isOn: $fallingOn)
             if fallingOn {
                 SliderRow(title: "Amount", value: $fallingAmount, range: 10...200, step: 10, defaultValue: def("fallingAmount"))
+            }
+        }
+        Section("Winter") {
+            ToggleRow(title: "Ice on the edges", symbol: "snowflake.circle",
+                      note: "Freezes in slowly from the shore; koi swim slower under it.", isOn: $iceOn)
+            if iceOn {
+                SliderRow(title: "Reach", value: $iceAmount, range: 20...150, step: 10, defaultValue: def("iceAmount"))
             }
         }
     }
@@ -903,6 +950,7 @@ struct PerformancePage: View {
 
 struct GeneralPage: View {
     @AppStorage("showStats") private var showStats = false
+    @AppStorage(CaptureFolder.key) private var captureFolder = ""
     @State private var startAtLogin = SMAppService.mainApp.status == .enabled
 
     var body: some View {
@@ -915,6 +963,26 @@ struct GeneralPage: View {
                         startAtLogin = SMAppService.mainApp.status == .enabled
                     }
                 }
+        }
+        Section {
+            LabeledContent {
+                HStack {
+                    if !captureFolder.isEmpty {
+                        Button("Use Default") { captureFolder = "" }
+                    }
+                    Button("Choose…", action: chooseFolder)
+                }
+            } label: {
+                RowLabel(title: "Save to", symbol: "folder",
+                         note: (CaptureFolder.url.path as NSString).abbreviatingWithTildeInPath)
+            }
+        } header: {
+            Text("Screenshots and videos")
+        } footer: {
+            Text(captureFolder.isEmpty
+                 ? "Same folder as macOS screenshots. Take them from the menu bar icon."
+                 : "Take them from the menu bar icon.")
+                .foregroundStyle(.secondary)
         }
         Section("Diagnostics") {
             ToggleRow(title: "Show FPS", symbol: "chart.xyaxis.line", note: "Frame rate, node and draw counts in the corner.",
@@ -932,6 +1000,18 @@ struct GeneralPage: View {
                 RowLabel(title: "Source code", symbol: "chevron.left.forwardslash.chevron.right")
             }
         }
+    }
+
+    private func chooseFolder() {
+        let panel = NSOpenPanel()
+        panel.canChooseDirectories = true
+        panel.canChooseFiles = false
+        panel.canCreateDirectories = true
+        panel.allowsMultipleSelection = false
+        panel.prompt = "Choose"
+        panel.message = "Choose where Kolam saves screenshots and videos."
+        panel.directoryURL = CaptureFolder.url
+        if panel.runModal() == .OK, let url = panel.url { captureFolder = url.path }
     }
 
     /// "1.2.0 (14)" from Info.plist; the build number is left out when it adds nothing.

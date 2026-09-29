@@ -45,8 +45,12 @@ Click the Kolam icon in the menu bar:
 | --- | --- |
 | **Pause / Resume** | Stop or restart the animation. |
 | **Settings… (⌘,)** | Tune the koi, creatures, plants, weather, water, style and performance, or apply a preset. |
+| **Take Screenshot** | Saves the pond alone as a PNG, one per display. |
+| **Record Video** | Records the pond as an MP4 for 15 s, 30 s, 45 s or 1 min, or until you choose **Stop Recording**. |
 | **Interactive** | Lets the pond take clicks so you can feed the koi. Desktop icons are hidden while it's on. |
 | **Quit Kolam** | Quit. |
+
+Screenshots and videos show only the pond: no desktop icons, windows or menu bar. They're saved to the folder set in **Settings → General** (by default, where macOS saves screenshots), and a notification lets you open the file or show it in Finder.
 
 Turn on **Start at login** in Settings to keep the pond running.
 
@@ -55,6 +59,7 @@ Turn on **Start at login** in Settings to keep the pond running.
 Requires the Xcode Command Line Tools (`xcode-select --install`).
 
 ```sh
+./dev.sh                   # while developing: rebuild and relaunch on every save
 ./build.sh                 # build a universal app and install it to ~/Applications
 ARCHS=arm64 ./build.sh     # faster: build only for your Mac's chip
 ./make-dmg.sh              # build the installer at dist/Kolam.dmg

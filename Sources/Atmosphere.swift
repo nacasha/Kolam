@@ -1,5 +1,5 @@
 // Atmosphere — weather and seasons, and what they bring: raindrop ripples,
-// fireflies at night, falling petals/leaves/snow, and a darkening overlay.
+// fireflies at night, falling petals/leaves/snow, winter ice, and a darkening overlay.
 
 import SpriteKit
 
@@ -243,6 +243,9 @@ final class Atmosphere {
     private(set) var wind = CGVector.zero
     /// Current wind strength multiplier (1 = a light breeze), including gusts.
     private(set) var windStrength: CGFloat = 1
+    /// How far winter ice has crept in from the edges (0 = open water).
+    private(set) var ice: CGFloat = 0
+    private var iceStarted = false
     private var tint = SIMD3<Float>(1, 1, 1)
 
     private var windAngle = CGFloat.random(in: 0..<(2 * .pi))
@@ -295,6 +298,10 @@ final class Atmosphere {
         }
     }
 
+    private func flyTrim(to count: Int) {
+        while fireflies.count > count { fireflies.removeLast().node.removeFromParent() }
+    }
+
     /// `pond` is where rain and falling items land (the water, not the bank).
     func update(dt: CGFloat, config c: PondConfig, bounds: CGRect, pond: CGRect, unit u: CGFloat, surface: SKNode, shadows: SKNode) {
         time += dt
@@ -315,6 +322,12 @@ final class Atmosphere {
 
         let w = weather(c)
         let k = 1 - exp(-dt * 0.35)
+
+        // Ice forms and melts over about a minute; a pond that starts in winter starts frozen.
+        let iceTarget: CGFloat = c.iceOn && season(c) == .winter ? c.iceAmount : 0
+        if !iceStarted { ice = iceTarget; iceStarted = true }
+        ice += (iceTarget - ice) * (1 - exp(-dt * 0.05))
+        if abs(ice - iceTarget) < 0.002 { ice = iceTarget }
 
         // Rain.
         let raining: Bool
@@ -420,13 +433,13 @@ final class Atmosphere {
         // Fireflies, only while it's (becoming) night and not raining hard.
         let flyLevel = night * (1 - min(1, rain))
         let wantFlies = c.fireflies && flyLevel > 0.01
-        if wantFlies && fireflies.isEmpty {
-            fireflies = (0..<max(8, Int(4 * areaM))).map { _ in Firefly(in: bounds, unit: u) }
-            fireflies.forEach { fireflyLayer.addChild($0.node) }
-        }
-        if !c.fireflies && !fireflies.isEmpty {
-            fireflyLayer.removeAllChildren()
-            fireflies = []
+        let flyCount = c.fireflies ? max(1, Int((max(8, 4 * areaM) * c.fireflyAmount).rounded())) : 0
+        // Add or remove single flies so the others keep their places when the amount changes.
+        flyTrim(to: flyCount)
+        while wantFlies && fireflies.count < flyCount {
+            let f = Firefly(in: bounds, unit: u)
+            fireflyLayer.addChild(f.node)
+            fireflies.append(f)
         }
         fireflyLayer.isHidden = !wantFlies
         if wantFlies {

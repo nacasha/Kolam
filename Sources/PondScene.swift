@@ -35,6 +35,8 @@ final class PondScene: SKScene {
     private var geometry: PondGeometry
     private var reeds: SKNode?
     private let atmosphere = Atmosphere()
+    private let ice = Ice()
+    private let debris = Debris()
     private let moods = KoiMoods()
     private var causticOffset = CGVector.zero
     private var causticClock: CGFloat = 0
@@ -75,6 +77,7 @@ final class PondScene: SKScene {
         surfaceLayer.zPosition = 1000
         addChild(surfaceLayer)
 
+        addChild(ice.node)
         addChild(atmosphere.overlay)
         addChild(atmosphere.flash)
         addChild(atmosphere.fireflyLayer)
@@ -110,7 +113,7 @@ final class PondScene: SKScene {
         }
         // Size and water colour are baked into each fish, so those rebuild the school.
         if new.koiSize != old.koiSize || new.water != old.water || new.depth != old.depth
-            || new.depthDarken != old.depthDarken || new.shadowBlur != old.shadowBlur {
+            || new.depthDarken != old.depthDarken || new.floorDarkness != old.floorDarkness || new.shadowBlur != old.shadowBlur {
             setKoiCount(0)
         }
         setKoiCount(new.koiCount)
@@ -130,7 +133,7 @@ final class PondScene: SKScene {
             buildReeds()
         }
         if new.turtle != old.turtle || new.water != old.water || new.depth != old.depth
-            || new.depthDarken != old.depthDarken { setTurtle(new.turtle) }
+            || new.depthDarken != old.depthDarken || new.floorDarkness != old.floorDarkness { setTurtle(new.turtle) }
         if new.vinesOn != old.vinesOn || new.depth != old.depth || new.shadowStrength != old.shadowStrength
             || new.shadowDistance != old.shadowDistance || new.lightAngle != old.lightAngle { buildVines() }
     }
@@ -142,7 +145,7 @@ final class PondScene: SKScene {
     }
 
     private func applyShadowAndWave(_ c: PondConfig) {
-        Depth.set(c.depth, darken: c.depthDarken)
+        Depth.set(c.depth, darken: c.depthDarken, darkness: c.floorDarkness)
         Depth.shadowStrength = c.shadowStrength
         Depth.shadowBlur = c.shadowBlur
         Depth.shadowDistance = c.shadowDistance
@@ -319,7 +322,8 @@ final class PondScene: SKScene {
         food.update(dt: dt, koi: koi, unit: unit) { [unowned self] p in
             Ripple.spawn(at: p, in: surfaceLayer, size: 70 * unit, rings: 2, strength: 0.5)
         }
-        let koiDt = dt * config.koiSpeed
+        // Cold water under ice slows the koi.
+        let koiDt = dt * config.koiSpeed * (1 - 0.35 * min(1, atmosphere.ice))
         for fish in koi {
             fish.update(dt: koiDt, bounds: bounds, others: koi)
         }
@@ -354,6 +358,10 @@ final class PondScene: SKScene {
         reeds?.speed = sway
         vines?.speed = sway
         atmosphere.update(dt: dt, config: config, bounds: screen, pond: bounds, unit: unit, surface: surfaceLayer, shadows: shadowLayer)
+        ice.update(level: atmosphere.ice, screen: size, unit: unit)
+        debris.update(dt: dt, on: config.debrisOn, amount: config.debrisAmount, season: atmosphere.season(config),
+                      ice: Ice.reach(level: atmosphere.ice, unit: unit), screen: screen, pond: bounds, unit: unit,
+                      surface: surfaceLayer)
     }
 }
 
