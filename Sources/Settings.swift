@@ -125,6 +125,13 @@ enum Settings {
         set { d.set(newValue, forKey: "showStats") }
     }
 
+    /// Displays the pond is turned off on, by display UUID. Stored as the off list so a
+    /// display that's never been seen before gets a pond.
+    static var disabledDisplays: Set<String> {
+        get { Set(d.stringArray(forKey: "disabledDisplays") ?? []) }
+        set { d.set(newValue.sorted(), forKey: "disabledDisplays") }
+    }
+
     /// 0 = the display's maximum refresh rate.
     static var fps: Int { d.integer(forKey: "fps") }
 }

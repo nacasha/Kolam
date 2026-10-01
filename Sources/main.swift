@@ -16,11 +16,13 @@ final class PondView: SKView {
 
 final class WallpaperWindow: NSWindow {
     let skView: PondView
-    private let maxFPS: Int
+    private(set) var displayID: CGDirectDisplayID?
+    private var maxFPS: Int
 
     init(screen: NSScreen) {
         skView = PondView(frame: NSRect(origin: .zero, size: screen.frame.size))
         skView.autoresizingMask = [.width, .height]
+        displayID = screen.displayID
         maxFPS = screen.maximumFramesPerSecond
         skView.ignoresSiblingOrder = true
         skView.shouldCullNonVisibleNodes = true
@@ -38,6 +40,16 @@ final class WallpaperWindow: NSWindow {
 
         skView.presentScene(PondScene(size: screen.frame.size))
         applySettings()
+        orderFrontRegardless()
+    }
+
+    /// Follows the same display to a new frame or refresh rate without replacing the pond.
+    func fit(to screen: NSScreen) {
+        if frame != screen.frame { setFrame(screen.frame, display: true) }
+        if maxFPS != screen.maximumFramesPerSecond {
+            maxFPS = screen.maximumFramesPerSecond
+            applySettings()
+        }
         orderFrontRegardless()
     }
 
@@ -76,6 +88,22 @@ final class WallpaperWindow: NSWindow {
     }
 }
 
+extension NSScreen {
+    var displayID: CGDirectDisplayID? {
+        (deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? NSNumber)?.uint32Value
+    }
+
+    /// Survives reboots and replugging, unlike the display ID; used for saved settings.
+    var displayUUID: String? {
+        guard let id = displayID, let uuid = CGDisplayCreateUUIDFromDisplayID(id)?.takeRetainedValue() else { return nil }
+        return CFUUIDCreateString(nil, uuid) as String
+    }
+
+    var pondEnabled: Bool {
+        displayUUID.map { !Settings.disabledDisplays.contains($0) } ?? true
+    }
+}
+
 // MARK: - App
 
 final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
@@ -84,6 +112,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private var asleep = false
     private var settingsPending = false
     private var recorder: PondRecorder?
+    private var screenSync: DispatchWorkItem?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
@@ -160,8 +189,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
     private func observe() {
         let nc = NotificationCenter.default
+        // Fires in bursts (plugging a display, Space switches, Dock and menu bar changes),
+        // so wait for it to settle, then sync windows to displays instead of rebuilding.
         nc.addObserver(forName: NSApplication.didChangeScreenParametersNotification, object: nil, queue: .main) {
-            [weak self] _ in self?.rebuildWindows()
+            [weak self] _ in self?.scheduleScreenSync()
         }
         // Coalesced: a preset writes dozens of keys, but the scene should rebuild once.
         nc.addObserver(forName: UserDefaults.didChangeNotification, object: nil, queue: .main) { [weak self] _ in
@@ -193,9 +224,28 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         }
     }
 
+    private func scheduleScreenSync() {
+        screenSync?.cancel()
+        let work = DispatchWorkItem { [weak self] in self?.rebuildWindows() }
+        screenSync = work
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.5, execute: work)
+    }
+
+    /// Keeps one window per enabled display, matched by display ID. A display that stays
+    /// keeps its window and pond (only resized if its frame moved); new or re-enabled
+    /// displays get a fresh window, removed or disabled ones are torn down. Windows stay
+    /// in NSScreen.screens order so `windows.first` is the main display when it's enabled.
     private func rebuildWindows() {
-        windows.forEach { $0.tearDown() }
-        windows = NSScreen.screens.map { WallpaperWindow(screen: $0) }
+        var existing = Dictionary(windows.compactMap { w in w.displayID.map { ($0, w) } },
+                                  uniquingKeysWith: { a, _ in a })
+        windows = NSScreen.screens.filter(\.pondEnabled).map { screen in
+            if let id = screen.displayID, let window = existing.removeValue(forKey: id) {
+                window.fit(to: screen)
+                return window
+            }
+            return WallpaperWindow(screen: screen)
+        }
+        existing.values.forEach { $0.tearDown() }
         updatePlayback()
     }
 
@@ -242,6 +292,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         }
         menu.addItem(.separator())
         menu.addItem(item("Interactive (hides desktop icons)", #selector(toggleInteractive), on: Settings.interactive))
+        // Also shown with one display if it's off, so it can be turned back on.
+        if NSScreen.screens.count > 1 || NSScreen.screens.contains(where: { !$0.pondEnabled }) {
+            let displays = NSMenuItem(title: "Displays", action: nil, keyEquivalent: "")
+            let list = NSMenu()
+            for screen in NSScreen.screens {
+                let i = item(screen.localizedName, #selector(toggleDisplay(_:)), on: screen.pondEnabled)
+                i.representedObject = screen.displayUUID
+                i.isEnabled = screen.displayUUID != nil
+                list.addItem(i)
+            }
+            displays.submenu = list
+            menu.addItem(displays)
+        }
         menu.addItem(.separator())
         menu.addItem(NSMenuItem(title: "Quit Kolam", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q"))
     }
@@ -261,6 +324,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     /// Settings writes trigger UserDefaults.didChangeNotification, which applies them.
     @objc private func toggleInteractive() { Settings.interactive.toggle() }
 
+    @objc private func toggleDisplay(_ sender: NSMenuItem) {
+        guard let uuid = sender.representedObject as? String else { return }
+        var off = Settings.disabledDisplays
+        if off.contains(uuid) { off.remove(uuid) } else { off.insert(uuid) }
+        Settings.disabledDisplays = off
+        rebuildWindows()
+    }
+
     @objc private func openSettings() { SettingsWindow.shared.show() }
 
     @objc private func takeScreenshot() { _ = Screenshot.take(windows) }
@@ -277,7 +348,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
     @objc private func stopRecording() { recorder?.stop() }
 
-    /// Records the main display (the one with the menu bar).
+    /// Records the main display (the one with the menu bar), or the first enabled one if it's off.
     private func startRecording(seconds: TimeInterval, done: @escaping (URL?) -> Void) {
         guard recorder == nil, let window = windows.first,
               let r = PondRecorder(view: window.skView, duration: seconds) else { done(nil); return }
