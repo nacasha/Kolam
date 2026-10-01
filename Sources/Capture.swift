@@ -302,14 +302,16 @@ final class CaptureNotifier: NSObject, UNUserNotificationCenterDelegate {
     func userNotificationCenter(_ center: UNUserNotificationCenter, didReceive response: UNNotificationResponse,
                                 withCompletionHandler completionHandler: @escaping () -> Void) {
         let urls = (response.notification.request.content.userInfo["paths"] as? [String] ?? []).map(URL.init(fileURLWithPath:))
-        DispatchQueue.main.async { [self] in
-            switch response.actionIdentifier {
-            case revealAction:
+        // Resolved before dispatching: capturing `self` in this closure crashes
+        // the Swift 6.1 compiler (SILGenCleanup assertion) in release builds.
+        let action = response.actionIdentifier
+        let reveal = action == revealAction
+        let open = action == openAction || action == UNNotificationDefaultActionIdentifier
+        DispatchQueue.main.async {
+            if reveal {
                 NSWorkspace.shared.activateFileViewerSelecting(urls)
-            case openAction, UNNotificationDefaultActionIdentifier:
+            } else if open {
                 urls.forEach { NSWorkspace.shared.open($0) }
-            default:
-                break
             }
         }
         completionHandler()
